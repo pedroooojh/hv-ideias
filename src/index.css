@@ -1,0 +1,573 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --page: 244 241 238;
+    --surface: 255 255 255;
+    --subtle: 241 243 246;
+    --line: 229 226 222;
+    --ink: 27 35 51;
+    --muted: 92 101 117;
+    --brand: 35 80 200;
+    --brand-strong: 28 64 170;
+    --brand-soft: 232 239 253;
+    --navy: 36 64 143;
+    --teal: 58 135 160;
+    --teal-soft: 230 242 246;
+    --success: 16 150 100;
+    --warning: 217 119 6;
+    --danger: 200 45 45;
+    --page-deep: 238 234 230;
+    --bg-glow-a: 0.1;
+    --bg-glow-b: 0.1;
+    --bg-glow-c: 0.07;
+    color-scheme: light;
+  }
+
+  .dark {
+    --page: 13 17 26;
+    --surface: 22 28 41;
+    --subtle: 30 38 54;
+    --line: 41 50 69;
+    --ink: 232 236 243;
+    --muted: 156 165 182;
+    --brand: 104 140 245;
+    --brand-strong: 140 168 250;
+    --brand-soft: 30 42 74;
+    --navy: 150 178 255;
+    --teal: 104 184 208;
+    --teal-soft: 24 48 58;
+    --success: 52 199 140;
+    --warning: 245 166 60;
+    --danger: 245 110 110;
+    --page-deep: 8 11 19;
+    --bg-glow-a: 0.16;
+    --bg-glow-b: 0.12;
+    --bg-glow-c: 0.14;
+    color-scheme: dark;
+  }
+
+  /* Escala da interface: celular em 100% (leitura e sem zoom automático no iOS),
+     tablet em 93,75% e desktop em 87,5%. Percentual: respeita a fonte escolhida
+     no navegador. Tudo em rem (textos, espaçamentos, larguras) acompanha. */
+  html {
+    -webkit-text-size-adjust: 100%;
+    font-size: 100%;
+  }
+  @media (min-width: 768px) {
+    html {
+      font-size: 93.75%;
+    }
+  }
+  /* Desktop: a escala acompanha a largura da tela (14px em 1440px, 17px em 1920px),
+     para a composição 16:9 ficar igual em notebook e em monitor grande. */
+  @media (min-width: 1024px) {
+    html {
+      font-size: clamp(0.8125rem, 0.3125rem + 0.625vw, 1.25rem);
+    }
+  }
+
+  /* Barra de rolagem na paleta do site: polegar azul da marca e trilha transparente
+     (o fundo da página aparece por trás, sem faixa sólida). */
+  html {
+    background-color: rgb(var(--page));
+    scrollbar-color: rgb(var(--brand) / 0.45) transparent;
+    scrollbar-width: thin;
+  }
+  * {
+    scrollbar-color: rgb(var(--brand) / 0.45) transparent;
+    scrollbar-width: thin;
+  }
+  /* A barra da página (html) é desenhada por cima do conteúdo (OverlayScrollbar):
+     a nativa reserva uma faixa sólida que corta os gradientes até a borda. */
+  html {
+    scrollbar-width: none;
+  }
+  html::-webkit-scrollbar {
+    display: none;
+  }
+  /* Safari e navegadores sem suporte a scrollbar-color. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--brand) / 0.45);
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--brand) / 0.7);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  body {
+    @apply font-sans text-ink antialiased;
+  }
+
+  /* Fundo do app: brilhos suaves em azul da marca e teal sobre a cor de página,
+     numa camada fixa (não rola junto e funciona também no iOS). */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(60rem 40rem at 8% -10%, rgb(var(--brand) / var(--bg-glow-a)), transparent 60%),
+      radial-gradient(50rem 36rem at 100% 15%, rgb(var(--teal) / var(--bg-glow-b)), transparent 60%),
+      radial-gradient(60rem 40rem at 70% 110%, rgb(var(--navy) / var(--bg-glow-c)), transparent 60%),
+      linear-gradient(180deg, rgb(var(--page)) 0%, rgb(var(--page-deep)) 100%);
+  }
+
+  /* Todo título usa Poppins; o restante herda Lato do body. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: 'Poppins', 'Lato', ui-sans-serif, system-ui, sans-serif;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand ring-offset-2 ring-offset-page;
+  }
+}
+
+@layer components {
+  /* Larguras fluidas: margens laterais proporcionais à tela, sem coluna fixa no centro.
+     page-wide: ~94% da largura (cabeçalho, início, rodapé). page-narrow: ~78% (páginas internas). */
+  .page-wide {
+    @apply mx-auto w-full max-w-[2400px] px-4 sm:px-6 lg:px-[3vw];
+  }
+  .page-narrow {
+    @apply mx-auto w-full max-w-[2000px] px-4 sm:px-6 lg:px-[11vw];
+  }
+
+  .card {
+    @apply rounded-xl border border-line/80 bg-surface shadow-card;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors duration-200
+      disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  .btn-primary {
+    @apply btn bg-brand text-white shadow-[0_8px_20px_-8px_rgb(var(--brand)/0.7)] hover:bg-brand-strong dark:text-page;
+  }
+  .btn-secondary {
+    @apply btn border border-line bg-surface text-ink hover:bg-subtle;
+  }
+  .btn-ghost {
+    @apply btn text-muted hover:bg-subtle hover:text-ink;
+  }
+  .btn-danger {
+    @apply btn bg-danger text-white hover:bg-danger/90 dark:text-page;
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-sm font-semibold text-ink;
+  }
+  .field-input {
+    @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-muted/70
+      focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/25 aria-[invalid=true]:border-danger;
+  }
+  .field-error {
+    @apply mt-1.5 text-sm text-danger;
+    animation: hv-fade-in 0.3s ease-out both;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .logo-mask {
+    -webkit-mask: url('/logo-hubvision.png') no-repeat left center / contain;
+    mask: url('/logo-hubvision.png') no-repeat left center / contain;
+  }
+}
+
+/* Transição de entrada padrão dos projetos Hubvision (mesma do SprintFlow):
+   opacidade 0 -> 1 em 0,3s, ease-out. */
+@keyframes hv-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-fade-in {
+  animation: hv-fade-in 0.3s ease-out both;
+}
+@keyframes hv-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.animate-fade-out {
+  animation: hv-fade-out 0.12s ease-in both;
+}
+/* Modais e menus do Radix: entram e saem com opacidade. Na saída o Radix
+   espera o fim da animação para desmontar o elemento. */
+.animate-presence[data-state='open'] {
+  animation: hv-fade-in 0.15s ease-out both;
+}
+.animate-presence[data-state='closed'] {
+  animation: hv-fade-out 0.1s ease-in both;
+}
+
+/* Painéis flutuantes da página inicial: deriva livre em X e Y.
+   Duas ondas independentes por painel (uma por eixo) com período, amplitude e
+   defasagem sorteados no carregamento (useDrift); como os períodos não batem, o
+   trajeto não se repete de forma perceptível. Só translate, sem escala. */
+@property --hv-fx {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+@property --hv-fy {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
+@keyframes hv-wave-x {
+  from {
+    --hv-fx: -1;
+  }
+  to {
+    --hv-fx: 1;
+  }
+}
+@keyframes hv-wave-y {
+  from {
+    --hv-fy: -1;
+  }
+  to {
+    --hv-fy: 1;
+  }
+}
+.hv-drift {
+  translate: calc(var(--hv-fx) * var(--hv-ax, 6px)) calc(var(--hv-fy) * var(--hv-ay, 6px));
+  animation:
+    hv-wave-x var(--hv-dx, 7s) ease-in-out var(--hv-ox, 0s) infinite alternate,
+    hv-wave-y var(--hv-dy, 5s) ease-in-out var(--hv-oy, 0s) infinite alternate;
+  will-change: translate;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hv-drift {
+    animation: none !important;
+  }
+}
+
+/* Desfoque progressivo atrás do cabeçalho: três camadas com blur crescente e
+   máscaras cada vez mais curtas, para o desfoque sumir suavemente para baixo.
+   A intensidade (--hv-veil, 0 a 1) acompanha a rolagem. Não usa opacity no
+   contêiner: opacidade < 1 isolaria o fundo e o blur sumiria durante a transição. */
+.hv-header-veil {
+  height: calc(var(--header-h, 6rem) + 2.5rem);
+  background: linear-gradient(
+    to bottom,
+    rgb(var(--page) / calc(0.7 * var(--hv-veil, 0))) 0%,
+    rgb(var(--page) / calc(0.35 * var(--hv-veil, 0))) 55%,
+    rgb(var(--page) / 0) 100%
+  );
+}
+.hv-veil-layer {
+  position: absolute;
+  inset: 0;
+}
+.hv-veil-1 {
+  -webkit-backdrop-filter: blur(calc(2px * var(--hv-veil, 0)));
+  backdrop-filter: blur(calc(2px * var(--hv-veil, 0)));
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 70%, transparent 100%);
+}
+.hv-veil-2 {
+  -webkit-backdrop-filter: blur(calc(6px * var(--hv-veil, 0)));
+  backdrop-filter: blur(calc(6px * var(--hv-veil, 0)));
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 75%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 45%, transparent 75%);
+}
+.hv-veil-3 {
+  -webkit-backdrop-filter: blur(calc(12px * var(--hv-veil, 0)));
+  backdrop-filter: blur(calc(12px * var(--hv-veil, 0)));
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 25%, transparent 55%);
+  mask-image: linear-gradient(to bottom, #000 0%, #000 25%, transparent 55%);
+}
+
+/* Quem pediu menos movimento no sistema não vê o fade de entrada. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-fade-out,
+  .animate-presence[data-state] {
+    animation: none !important;
+  }
+}
+
+/* Fora de @layer: precisa vencer os utilitários do Tailwind (ex.: lg:text-[84px]). */
+/* Hero com a altura exata da primeira tela (descontando o cabeçalho fixo). */
+.hero-viewport {
+  min-height: calc(100vh - var(--header-h, 5.75rem));
+  min-height: calc(100svh - var(--header-h, 5.75rem));
+}
+/* Em telas baixas, compacta o hero para caber inteiro na primeira tela. */
+@media (min-width: 1024px) and (max-height: 820px) {
+  .hero-viewport {
+    padding-block: 1.25rem;
+  }
+  .hero-title {
+    font-size: 3.875rem;
+  }
+  .hero-gap {
+    margin-top: 1.5rem;
+  }
+}
+@media (min-width: 1024px) and (max-height: 680px) {
+  .hero-viewport {
+    padding-block: 0.5rem;
+  }
+  .hero-title {
+    font-size: 3.375rem;
+  }
+  .hero-gap {
+    margin-top: 1rem;
+  }
+}
+@media (max-width: 1023px) and (max-height: 760px) {
+  .hero-viewport {
+    padding-block: 1rem;
+  }
+  .hero-title {
+    font-size: 40px;
+  }
+  .hero-gap {
+    margin-top: 1.25rem;
+  }
+}
+@media (max-width: 1023px) and (max-height: 600px) {
+  .hero-viewport {
+    padding-block: 0.75rem;
+  }
+  .hero-title {
+    font-size: 30px;
+  }
+  .hero-text {
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  .hero-gap {
+    margin-top: 0.75rem;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Painel animado da tela de login
+   Só transform/opacity/background-position. Todo ciclo é contínuo: giros são
+   lineares de 0° a 360° e os demais movimentos vão e voltam (alternate), então
+   nenhuma animação "salta" ao recomeçar.
+   --------------------------------------------------------------------------- */
+.hv-brand-panel {
+  background: linear-gradient(125deg, #1c5a9c, #0e2f86, #13348f, #1f4fd6, #1a6fb0);
+  background-size: 320% 320%;
+  animation: hv-gradient-pan 20s ease-in-out infinite alternate;
+  /* Raio da órbita das mensagens: acompanha a largura do painel para não cortar. */
+  --hv-orbit-r: clamp(195px, calc(25vw - 100px), 250px);
+}
+
+@keyframes hv-gradient-pan {
+  from {
+    background-position: 0% 25%;
+  }
+  to {
+    background-position: 100% 75%;
+  }
+}
+
+.hv-blob {
+  will-change: transform;
+}
+.hv-blob-1 {
+  animation: hv-drift-1 17s ease-in-out infinite alternate;
+}
+.hv-blob-2 {
+  animation: hv-drift-2 23s ease-in-out infinite alternate;
+}
+.hv-blob-3 {
+  animation: hv-drift-3 29s ease-in-out infinite alternate;
+}
+
+@keyframes hv-drift-1 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(22%, 34%) scale(1.15);
+  }
+}
+@keyframes hv-drift-2 {
+  from {
+    transform: translate(0, 0) scale(1.05);
+  }
+  to {
+    transform: translate(-24%, -30%) scale(1.2);
+  }
+}
+@keyframes hv-drift-3 {
+  from {
+    transform: translate(-30%, -40%) scale(0.9);
+  }
+  to {
+    transform: translate(12%, 15%) scale(1.15);
+  }
+}
+
+.hv-orbit-center {
+  width: 0;
+  height: 0;
+}
+
+/* Anéis: centralizados no ponto da órbita, girando e "respirando" de leve. */
+.hv-ring {
+  width: var(--hv-ring-size);
+  height: var(--hv-ring-size);
+  margin-left: calc(var(--hv-ring-size) / -2);
+  margin-top: calc(var(--hv-ring-size) / -2);
+  animation:
+    hv-spin var(--hv-ring-duration) linear infinite normal,
+    hv-breathe 9s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes hv-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.hv-ring-steady {
+  animation: hv-spin var(--hv-ring-duration) linear infinite;
+}
+
+@keyframes hv-breathe {
+  from {
+    scale: 1;
+  }
+  to {
+    scale: 1.035;
+  }
+}
+
+/* Mensagens em órbita: o braço gira; o rótulo gira ao contrário e fica na horizontal. */
+.hv-orbit {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  animation: hv-spin 60s linear infinite;
+  animation-delay: var(--hv-orbit-delay);
+  will-change: transform;
+}
+/* Ponto exato sobre o anel (raio --hv-orbit-r). */
+.hv-orbit-item {
+  position: absolute;
+  left: var(--hv-orbit-r);
+  top: 0;
+  width: 0;
+  height: 0;
+}
+/* Ponto de luz que percorre o anel, logo abaixo do nome. */
+.hv-orbit-dot {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.95);
+  box-shadow:
+    0 0 0 3px rgb(127 214 242 / 0.25),
+    0 0 14px 4px rgb(127 214 242 / 0.7);
+}
+/* Elemento sem tamanho no ponto do anel: a contra-rotação acontece em torno desse ponto. */
+.hv-orbit-upright {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  animation: hv-counter-spin 60s linear infinite;
+  animation-delay: var(--hv-orbit-delay);
+}
+/* O nome fica centralizado acima do ponto. */
+.hv-orbit-label {
+  position: absolute;
+  left: 0;
+  bottom: 10px;
+  transform: translateX(-50%);
+}
+@keyframes hv-counter-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+/* Painéis estreitos (telas de 1024–1279px): rótulos compactos para caber na órbita. */
+@media (max-width: 1279px) {
+  .hv-orbit-label {
+    gap: 0.375rem;
+    padding: 0.375rem 0.625rem;
+    font-size: 11px;
+  }
+}
+
+/* Logo e nome flutuando juntos, suavemente. */
+.hv-float {
+  animation: hv-float 6s ease-in-out infinite alternate;
+}
+@keyframes hv-float {
+  from {
+    translate: 0 -5px;
+  }
+  to {
+    translate: 0 5px;
+  }
+}
+
+/* Quem pediu menos movimento no sistema vê o painel parado (cada item na sua posição). */
+@media (prefers-reduced-motion: reduce) {
+  .hv-brand-panel,
+  .hv-blob,
+  .hv-ring,
+  .hv-orbit,
+  .hv-orbit-upright,
+  .hv-float {
+    animation-play-state: paused !important;
+  }
+}
