@@ -2,7 +2,8 @@ import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ImageOff, Lightbulb, MailPlus, MessageSquare, RefreshCcw, ScrollText, Send, ThumbsUp, Users } from 'lucide-react';
+import * as Menu from '@radix-ui/react-dropdown-menu';
+import { ImageOff, Lightbulb, MailPlus, MessageSquare, MoreHorizontal, RefreshCcw, ScrollText, Send, ThumbsUp, Trash2, Users } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { api, qk, type AdminSuggestion, type AdminUser, type AuditEntry } from '@/lib/api';
 import {
@@ -291,23 +292,76 @@ function UsersPanel({ controlsSlot }: { controlsSlot: HTMLElement | null }) {
   );
 }
 
+/** Ações secundárias da conta (menu ⋯): reenviar convite, remover foto e excluir. */
+function UserActionsMenu({
+  user,
+  onResend,
+  onRemovePhoto,
+  onDelete,
+}: {
+  user: AdminUser;
+  onResend: () => void;
+  onRemovePhoto: () => void;
+  onDelete: () => void;
+}) {
+  const item =
+    'flex cursor-pointer select-none items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-ink outline-none transition-colors duration-150 data-[highlighted]:bg-subtle';
+  return (
+    <Menu.Root modal={false}>
+      <Menu.Trigger
+        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line text-muted transition-colors duration-200 hover:bg-subtle hover:text-ink"
+        aria-label={`Mais ações para ${user.name}`}
+        title="Mais ações"
+      >
+        <MoreHorizontal className="h-5 w-5" />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Content
+          align="end"
+          sideOffset={6}
+          collisionPadding={12}
+          className="animate-presence z-50 min-w-[13rem] rounded-xl border border-line bg-surface p-1.5 shadow-float focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        >
+          {user.invite_pending && (
+            <Menu.Item className={item} onSelect={onResend}>
+              <Send className="h-4 w-4 text-muted" aria-hidden /> Reenviar convite
+            </Menu.Item>
+          )}
+          {user.avatar_path && (
+            <Menu.Item className={item} onSelect={onRemovePhoto}>
+              <ImageOff className="h-4 w-4 text-muted" aria-hidden /> Remover foto
+            </Menu.Item>
+          )}
+          {(user.invite_pending || user.avatar_path) && <Menu.Separator className="my-1 h-px bg-line" />}
+          <Menu.Item className={`${item} text-danger data-[highlighted]:bg-danger/10`} onSelect={onDelete}>
+            <Trash2 className="h-4 w-4" aria-hidden /> {user.invite_pending ? 'Cancelar convite' : 'Excluir conta'}
+          </Menu.Item>
+        </Menu.Content>
+      </Menu.Portal>
+    </Menu.Root>
+  );
+}
+
 function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [pending, setPending] = useState<{ role: AdminUser['role']; status: AdminUser['status'] } | null>(null);
   const [removingPhoto, setRemovingPhoto] = useState(false);
-  const [resending, setResending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const refreshPeople = () => {
+    for (const key of ['admin-users', 'audit-log', 'ranking', 'suggestions', 'suggestion', 'comments', 'profile']) {
+      queryClient.invalidateQueries({ queryKey: [key] });
+    }
+  };
 
   const resendInvite = async () => {
-    setResending(true);
     try {
       await api.adminInviteUser(user.email);
       queryClient.invalidateQueries({ queryKey: qk.auditLog });
       toast.success(`Convite reenviado para ${user.email}.`);
     } catch (err) {
       toast.error(errorMessage(err));
-    } finally {
-      setResending(false);
     }
   };
 
@@ -327,12 +381,21 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
       <div className="flex min-w-0 items-center gap-3">
         <Avatar name={user.name} photo={user.avatar_path} size="md" tone={toneFor(user.name)} />
         <div className="min-w-0">
-          <p className="font-semibold text-ink">
-            {user.name} {isSelf && <span className="chip ml-1 bg-brand-soft py-0.5 text-[0.6875rem] text-brand">você</span>}
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-semibold text-ink">{user.name}</span>
+            {isSelf && <span className="chip bg-brand-soft py-0.5 text-[0.6875rem] text-brand">você</span>}
+            {user.invite_pending && (
+              <span className="chip whitespace-nowrap bg-warning/10 py-0.5 text-[0.6875rem] text-warning" title="A pessoa ainda não abriu o convite nem criou a senha">
+                Convite pendente
+              </span>
+            )}
+            {user.status === 'disabled' && (
+              <span className="chip whitespace-nowrap bg-danger/10 py-0.5 text-[0.6875rem] text-danger">Desativada</span>
+            )}
           </p>
           <p className="truncate text-sm text-muted">{user.email}</p>
           <p className="text-xs text-muted">
-            Desde {formatDate(user.created_at)} · {user.suggestion_count} sugestão(ões)
+            {user.invite_pending ? 'Convidada em' : 'Desde'} {formatDate(user.created_at)} · {user.suggestion_count} sugestão(ões)
           </p>
         </div>
       </div>
@@ -349,31 +412,26 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
             { value: 'admin', label: 'Administrador', description: 'Gerencia projetos, status, moderação e contas' },
           ]}
         />
-        <button
-          type="button"
-          className={user.status === 'active' ? 'btn-secondary py-2' : 'btn-primary py-2'}
-          disabled={isSelf}
-          onClick={() => setPending({ role: user.role, status: user.status === 'active' ? 'disabled' : 'active' })}
-          title={isSelf ? 'Você não pode alterar a própria conta' : undefined}
-        >
-          {user.status === 'active' ? 'Desativar' : 'Reativar'}
-        </button>
-        {user.avatar_path && (
-          <button type="button" className="btn-ghost py-2" onClick={() => setRemovingPhoto(true)} title="Remover a foto de perfil">
-            <ImageOff className="h-4 w-4" aria-hidden /> Remover foto
+        {/* Convite pendente: ainda não há o que desativar; o menu tem "Cancelar convite". */}
+        {!user.invite_pending && (
+          <button
+            type="button"
+            className={user.status === 'active' ? 'btn-secondary py-2' : 'btn-primary py-2'}
+            disabled={isSelf}
+            onClick={() => setPending({ role: user.role, status: user.status === 'active' ? 'disabled' : 'active' })}
+            title={isSelf ? 'Você não pode alterar a própria conta' : undefined}
+          >
+            {user.status === 'active' ? 'Desativar' : 'Reativar'}
           </button>
         )}
-        {user.invite_pending && (
-          <>
-            <span className="chip bg-warning/10 text-warning" title="A pessoa ainda não abriu o convite nem criou a senha">
-              Convite pendente
-            </span>
-            <button type="button" className="btn-ghost py-2" onClick={resendInvite} disabled={resending}>
-              <Send className="h-4 w-4" aria-hidden /> {resending ? 'Reenviando…' : 'Reenviar convite'}
-            </button>
-          </>
+        {!isSelf && (
+          <UserActionsMenu
+            user={user}
+            onResend={resendInvite}
+            onRemovePhoto={() => setRemovingPhoto(true)}
+            onDelete={() => setDeleting(true)}
+          />
         )}
-        {user.status === 'disabled' && <span className="chip bg-danger/10 text-danger">Desativada</span>}
       </div>
       <ConfirmDialog
         open={removingPhoto}
@@ -383,10 +441,31 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
         confirmLabel="Remover foto"
         onConfirm={async () => {
           await api.adminRemoveAvatar(user.id);
-          for (const key of ['admin-users', 'audit-log', 'ranking', 'suggestions', 'suggestion', 'comments', 'profile']) {
-            queryClient.invalidateQueries({ queryKey: [key] });
-          }
+          refreshPeople();
           toast.success('Foto removida.');
+        }}
+      />
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={user.invite_pending ? 'Cancelar convite' : `Excluir a conta de ${user.name}`}
+        description={
+          user.invite_pending ? (
+            `O convite para ${user.email} deixa de valer e a pessoa sai da lista. Dá para convidar de novo depois.`
+          ) : (
+            <>
+              Esta ação não pode ser desfeita. O login, os votos dados, as notificações e a foto de {user.name} são apagados;
+              os comentários aparecem como removidos pela moderação; as sugestões continuam, sem o nome
+              (“Participante removido”). Se a ideia for só impedir o acesso, use <strong>Desativar</strong>.
+            </>
+          )
+        }
+        confirmLabel={user.invite_pending ? 'Cancelar convite' : 'Excluir conta'}
+        cancelLabel={user.invite_pending ? 'Manter convite' : 'Voltar'}
+        onConfirm={async () => {
+          await api.adminDeleteUser(user.id);
+          refreshPeople();
+          toast.success(user.invite_pending ? 'Convite cancelado.' : 'Conta excluída.');
         }}
       />
       <ConfirmDialog
@@ -429,6 +508,8 @@ const ACTION_LABEL: Record<string, string> = {
   'user.avatar_remove': 'removeu a foto de perfil de',
   'user.self_delete': 'excluiu a própria conta',
   'user.invite': 'convidou',
+  'user.invite_cancel': 'cancelou o convite de',
+  'user.admin_delete': 'excluiu a conta de',
 };
 
 function statusLabel(value: unknown): string {

@@ -1111,3 +1111,42 @@ describe('Convites', () => {
     expect((await errorOf(admin.rpc('admin_record_invite', { p_email: 'ninguem@exemplo.test' }))).code).toBe('HV404');
   });
 });
+
+describe('Exclusão de contas pela Gestão', () => {
+  it('administrador exclui uma conta com a mesma regra da exclusão pela pessoa, com auditoria', async () => {
+    const ana = await t.createUser('Ana', { email: 'ana@exemplo.test' });
+    const bia = await t.createUser('Bia');
+    const sa = await suggest(ana, 'Ideia que fica');
+    await vote(ana, await suggest(bia, 'Ideia da Bia'));
+    await ana.rpc('create_comment', { p_suggestion_id: sa, p_content: 'Comentário da Ana' });
+
+    expect((await errorOf(bia.rpc('admin_delete_user', { p_user_id: ana.id }))).code).toBe('HV403');
+    await admin.rpc('admin_delete_user', { p_user_id: ana.id });
+
+    expect(await t.raw(`select 1 from auth.users where id = $1`, [ana.id])).toEqual([]);
+    expect(await t.raw(`select 1 from public.votes where user_id = $1`, [ana.id])).toEqual([]);
+    const [kept] = await bia.rpc<Row>('get_suggestion', { p_id: sa });
+    expect(kept.author_name).toBe('Participante removido');
+    const [comment] = await bia.rpc<Row>('list_comments', { p_suggestion_id: sa });
+    expect([comment.is_deleted, comment.deletion_reason]).toEqual([true, 'moderation']);
+    expect((await admin.rpc<Row>('admin_list_users', { p_search: 'ana' })).length).toBe(0);
+
+    const [entry] = await admin.rpc<Row>('admin_list_audit_log', { p_entity_type: 'user' });
+    expect(entry.action).toBe('user.admin_delete');
+    expect(entry.previous_value).toMatchObject({ name: 'Ana', email: 'ana@exemplo.test' });
+    expect((await errorOf(admin.rpc('admin_delete_user', { p_user_id: ana.id }))).code).toBe('HV404');
+  });
+
+  it('excluir um convite pendente equivale a cancelar o convite', async () => {
+    const id = '22222222-2222-4222-8222-222222222222';
+    await t.raw(`insert into auth.users (id, email, invited_at) values ($1, 'pendente@exemplo.test', now())`, [id]);
+    await admin.rpc('admin_delete_user', { p_user_id: id });
+    expect(await t.raw(`select 1 from auth.users where id = $1`, [id])).toEqual([]);
+    const [entry] = await admin.rpc<Row>('admin_list_audit_log', { p_entity_type: 'user' });
+    expect(entry.action).toBe('user.invite_cancel');
+  });
+
+  it('administrador não exclui a própria conta pela Gestão', async () => {
+    expect((await errorOf(admin.rpc('admin_delete_user', { p_user_id: admin.id }))).code).toBe('HV409');
+  });
+});

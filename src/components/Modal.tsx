@@ -48,6 +48,8 @@ interface ConfirmDialogProps {
   title: string;
   description: ReactNode;
   confirmLabel: string;
+  /** Texto do botão que fecha sem fazer nada (padrão "Cancelar"). */
+  cancelLabel?: string;
   tone?: 'danger' | 'primary';
   onConfirm: () => Promise<unknown>;
 }
@@ -59,6 +61,7 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel,
+  cancelLabel = 'Cancelar',
   tone = 'danger',
   onConfirm,
 }: ConfirmDialogProps) {
@@ -89,7 +92,7 @@ export function ConfirmDialog({
       {error && <FormError message={error} />}
       <div className="mt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <button type="button" className="btn-secondary" onClick={() => handleOpenChange(false)} disabled={pending}>
-          Cancelar
+          {cancelLabel}
         </button>
         <button
           type="button"

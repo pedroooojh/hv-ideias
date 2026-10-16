@@ -564,6 +564,11 @@ export const api = {
     }
     return result.data!;
   },
+  /** Exclui a conta (ou cancela um convite pendente), com a mesma regra da exclusão pela pessoa. */
+  adminDeleteUser: async (userId: string) => {
+    const photo = await rpc<string | null>('admin_delete_user', { p_user_id: userId });
+    await removeAvatarFile(photo);
+  },
   /** Moderação: tira a foto do perfil (com auditoria) e apaga o arquivo. */
   adminRemoveAvatar: async (userId: string) => {
     const old = await rpc<string | null>('admin_remove_avatar', { p_user_id: userId });
