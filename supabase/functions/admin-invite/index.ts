@@ -68,9 +68,10 @@ Deno.serve(async (req) => {
     const rateLimited = inviteError.status === 429 || /rate limit/i.test(inviteError.message);
     return json(rateLimited ? 429 : 502, {
       code: rateLimited ? 'HV429' : 'HV502',
+      // Só administradores chegam aqui: o motivo técnico ajuda a corrigir SMTP ou template.
       message: rateLimited
         ? 'Muitos e-mails enviados em pouco tempo. Aguarde alguns minutos e tente novamente.'
-        : 'Não foi possível enviar o convite agora. Verifique a configuração de e-mail (SMTP) e tente de novo.',
+        : `Não foi possível enviar o convite. Motivo informado pelo Supabase: ${inviteError.message}`,
     });
   }
 
