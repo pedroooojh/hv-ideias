@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowRight, KeyRound, Loader2 } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { supabase } from '@/lib/supabase';
@@ -15,6 +15,8 @@ export function ResetPasswordPage() {
   const navigate = useNavigate();
   const toast = useToast();
   const id = useId();
+  // Convite: a pessoa ainda não tem senha; o texto muda de "nova senha" para "crie sua senha".
+  const invited = useSearchParams()[0].has('convite');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [errors, setErrors] = useState<{ password?: string; confirm?: string }>({});
@@ -64,8 +66,12 @@ export function ResetPasswordPage() {
 
   return (
     <AuthShell>
-      <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">Definir nova senha</h1>
-      <p className="mt-3 text-[0.9375rem] text-muted">Escolha uma nova senha para acessar a plataforma.</p>
+      <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">{invited ? 'Crie sua senha' : 'Definir nova senha'}</h1>
+      <p className="mt-3 text-[0.9375rem] text-muted">
+        {invited
+          ? 'Boas-vindas ao Hubvision Ideias! Defina uma senha para entrar na plataforma.'
+          : 'Escolha uma nova senha para acessar a plataforma.'}
+      </p>
       <form onSubmit={submit} noValidate className="mt-8 space-y-5 border-t border-line pt-8">
         {formError && <FormError message={formError} />}
         <AuthField

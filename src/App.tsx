@@ -19,6 +19,7 @@ import { ProjectPage } from '@/pages/ProjectPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
 import { PublicProfilePage } from '@/pages/PublicProfilePage';
 import { RankingPage } from '@/pages/RankingPage';
+import { ConfirmPage } from '@/pages/ConfirmPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 import { SuggestionPage } from '@/pages/SuggestionPage';
 
@@ -95,6 +96,8 @@ export default function App() {
                 <Route path="entrar" element={<LoginPage />} />
               </Route>
               <Route path="redefinir-senha" element={<ResetPasswordPage />} />
+              {/* Destino dos links dos e-mails (confirmação, convite, recuperação, troca de e-mail). */}
+              <Route path="auth/confirm" element={<ConfirmPage />} />
 
               {/* Todo o resto exige login e conta ativa. */}
               <Route element={<RequireAuth />}>

@@ -189,7 +189,7 @@ Também cobre ranking semanal e fechamento gravado, fotos (Storage e moderação
 
 ## Pendências e evolução
 
-- **E-mails do Supabase Auth**: confirmação de cadastro e recuperação de senha dependem do SMTP configurado no projeto Supabase. Para produção, configure um SMTP próprio (Authentication → SMTP Settings); o SMTP padrão do Supabase tem limites baixos.
+- **E-mails do Supabase Auth**: dependem do SMTP configurado no projeto Supabase (o padrão só entrega para membros da organização). Os templates em português com a identidade do app ficam em [supabase/templates](supabase/templates) (gerados por `node scripts/email-templates.mjs`; assuntos em `ASSUNTOS.md`). Os links apontam para `/auth/confirm` no próprio site, que valida o token no navegador: o antivírus do e-mail não consome o link, e o convite leva direto para "Crie sua senha".
 - **Restrição de domínio de e-mail**: o cadastro está aberto. Se a plataforma for só para colaboradores, desative "Allow new users to sign up" ou restrinja o domínio com um Auth Hook.
 - **Backup**: use os backups diários / Point-in-Time Recovery do plano Supabase. O emulador local não tem backup.
 - **Termos de Uso e Privacidade**: não foram publicados (dependem de texto jurídico). O rodapé só tem links para páginas que existem.
