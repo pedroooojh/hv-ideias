@@ -14,6 +14,7 @@ import { ConfirmDialog } from '@/components/Modal';
 import { StatusDialog } from '@/components/StatusDialog';
 import { SuggestionFormDialog } from '@/components/SuggestionFormDialog';
 import { useToast } from '@/components/Toast';
+import { PersonLink } from '@/components/PersonLink';
 import { Avatar, ErrorState, PageContainer, Skeleton, SuggestionStatusChip, TypeChip, toneFor } from '@/components/ui';
 import { VoteButton } from '@/components/VoteButton';
 
@@ -103,11 +104,11 @@ export function SuggestionPage() {
           </h1>
 
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted">
-            <span className="inline-flex items-center gap-2">
-              <Avatar name={s.author_name} tone={toneFor(s.author_name)} />
+            <PersonLink id={s.author_id} className="inline-flex items-center gap-2">
+              <Avatar name={s.author_name} photo={s.author_avatar} tone={toneFor(s.author_name)} />
               <span className="font-medium text-ink">{s.author_name}</span>
               {s.is_author && <span className="chip bg-brand-soft py-0.5 text-[0.6875rem] text-brand">você</span>}
-            </span>
+            </PersonLink>
             <Link
               to={`/projetos/${s.project_id}`}
               className="inline-flex items-center gap-1.5 transition-colors duration-200 hover:text-brand"
@@ -252,6 +253,8 @@ export function SuggestionPage() {
             qk.ranking,
             qk.myScore,
             qk.mySuggestions,
+            qk.publicProfiles,
+            qk.userSuggestionLists,
             qk.auditLog,
             qk.adminSuggestions,
           ]) {

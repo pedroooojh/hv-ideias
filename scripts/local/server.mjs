@@ -6,6 +6,7 @@
 // expõe o subconjunto da API do Supabase que o frontend usa:
 //   * /auth/v1  — cadastro, login, refresh, usuário atual, logout (e-mail/senha)
 //   * /rest/v1/rpc/<função> — chamadas RPC com os papéis anon/authenticated
+//   * /storage/v1/object — envio, remoção e leitura pública de arquivos (fotos de perfil)
 //
 // Serve para validar a aplicação sem Docker e sem um projeto Supabase. Não é um
 // substituto do Supabase em produção: não envia e-mails, não tem OAuth, não tem
@@ -70,6 +71,17 @@ async function bootstrap() {
     `);
     await db.query(`insert into emulator.meta values ('jwt_secret', $1)`, [randomBytes(32).toString('hex')]);
   }
+  // Storage mínimo (idempotente, também para bancos criados antes dele) e os bytes dos arquivos.
+  await db.exec(readFileSync(join(ROOT, 'scripts', 'local', 'storage-stub.sql'), 'utf8'));
+  await db.exec(`
+    create table if not exists emulator.storage_blobs (
+      bucket_id text not null,
+      name text not null,
+      content_type text not null,
+      data bytea not null,
+      primary key (bucket_id, name)
+    );
+  `);
   await applyPendingMigrations(fresh);
   return fresh;
 }
@@ -233,6 +245,15 @@ async function handleAuth(method, path, query, body, claims) {
   if (path === '/user') {
     if (!claims) return authError(401, 'no_authorization', 'This endpoint requires a valid Bearer token');
     if (method === 'PUT') {
+      if (body.email !== undefined) {
+        // O Supabase real envia links de confirmação; o emulador troca na hora.
+        const email = String(body.email).trim().toLowerCase();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return authError(400, 'validation_failed', 'Unable to validate email address: invalid format');
+        const other = await findUserByEmail(email);
+        if (other && other.id !== claims.sub) return authError(422, 'email_exists', 'A user with this email address has already been registered');
+        await db.query(`update auth.users set email = $2 where id = $1`, [claims.sub, email]);
+        console.log(`[emulador] e-mail alterado para ${email} (sem confirmação no emulador)`);
+      }
       if (body.password !== undefined) {
         if (String(body.password).length < MIN_PASSWORD) return authError(422, 'weak_password', `Password should be at least ${MIN_PASSWORD} characters.`);
         await db.query(`update emulator.credentials set password_hash = $2 where user_id = $1`, [claims.sub, hashPassword(String(body.password))]);
@@ -254,6 +275,120 @@ async function handleAuth(method, path, query, body, claims) {
   }
 
   return authError(404, 'not_found', 'Rota de autenticação não suportada pelo emulador');
+}
+
+// ---------------------------------------------------------------------------
+// Storage (equivalente ao Supabase Storage para os buckets das migrações)
+// ---------------------------------------------------------------------------
+
+const storageError = (status, message) => ({ status, body: { statusCode: String(status), error: 'Error', message } });
+
+/** Executa SQL com o papel e o JWT da requisição: as políticas de RLS de storage.objects valem aqui. */
+async function asRequester(claims, task) {
+  await db.query(`select set_config('request.jwt.claims', $1, false)`, [JSON.stringify(claims ?? { role: 'anon' })]);
+  await db.exec(`set role ${claims ? 'authenticated' : 'anon'}`);
+  try {
+    return await task();
+  } finally {
+    await db.exec('reset role');
+    await db.query(`select set_config('request.jwt.claims', '', false)`);
+  }
+}
+
+async function handleStorage(method, path, query, headers, raw, claims) {
+  // Links assinados (bucket privado): emite para os objetos que o usuário pode ler (RLS)...
+  const signBatch = path.match(/^\/object\/sign\/([^/]+)$/);
+  if (signBatch && method === 'POST') {
+    if (!claims) return storageError(401, 'Unauthorized');
+    const bucket = signBatch[1];
+    const body = parseJson(raw);
+    const paths = Array.isArray(body.paths) ? body.paths.map(String) : [];
+    const exp = Math.floor(Date.now() / 1000) + Math.min(Math.max(Number(body.expiresIn) || 3600, 1), 604800);
+    const visible = new Set(
+      await asRequester(claims, async () =>
+        (await db.query(`select name from storage.objects where bucket_id = $1 and name = any($2::text[])`, [bucket, paths])).rows.map((r) => r.name),
+      ),
+    );
+    return {
+      status: 200,
+      body: paths.map((p) =>
+        visible.has(p)
+          ? { path: p, error: null, signedURL: `/object/sign/${bucket}/${p}?token=${signJwt({ url: `${bucket}/${p}`, exp })}` }
+          : { path: p, error: 'Either the object does not exist or you do not have access to it', signedURL: null },
+      ),
+    };
+  }
+  // ...e serve o arquivo enquanto o token do link valer.
+  const signed = path.match(/^\/object\/sign\/([^/]+)\/(.+)$/);
+  if (signed && method === 'GET') {
+    const [, bucket, encoded] = signed;
+    const name = decodeURIComponent(encoded);
+    const token = verifyJwt(query.get('token') ?? '');
+    if (!token || token.url !== `${bucket}/${name}`) return storageError(400, 'Invalid signature');
+    const { rows } = await db.query(`select content_type, data from emulator.storage_blobs where bucket_id = $1 and name = $2`, [bucket, name]);
+    if (!rows[0]) return storageError(404, 'Object not found');
+    return { status: 200, raw: Buffer.from(rows[0].data), contentType: rows[0].content_type };
+  }
+
+  const pub = path.match(/^\/object\/public\/([^/]+)\/(.+)$/);
+  if (pub && method === 'GET') {
+    const [, bucket, name] = pub;
+    const { rows } = await db.query(
+      `select b.content_type, b.data from emulator.storage_blobs b
+         join storage.buckets k on k.id = b.bucket_id and k.public
+        where b.bucket_id = $1 and b.name = $2`,
+      [bucket, decodeURIComponent(name)],
+    );
+    if (!rows[0]) return storageError(404, 'Object not found');
+    return { status: 200, raw: Buffer.from(rows[0].data), contentType: rows[0].content_type };
+  }
+
+  const bucketOnly = path.match(/^\/object\/([^/]+)$/);
+  if (bucketOnly && method === 'DELETE') {
+    if (!claims) return storageError(401, 'Unauthorized');
+    const prefixes = parseJson(raw).prefixes;
+    const names = Array.isArray(prefixes) ? prefixes.map(String) : [];
+    const removed = await asRequester(claims, async () =>
+      (await db.query(`delete from storage.objects where bucket_id = $1 and name = any($2::text[]) returning name`, [bucketOnly[1], names])).rows,
+    );
+    for (const r of removed) await db.query(`delete from emulator.storage_blobs where bucket_id = $1 and name = $2`, [bucketOnly[1], r.name]);
+    return { status: 200, body: removed.map((r) => ({ name: r.name, bucket_id: bucketOnly[1] })) };
+  }
+
+  const obj = path.match(/^\/object\/([^/]+)\/(.+)$/);
+  if (obj && (method === 'POST' || method === 'PUT')) {
+    if (!claims) return storageError(401, 'Unauthorized');
+    const [, bucket, encoded] = obj;
+    const name = decodeURIComponent(encoded);
+    const spec = (await db.query(`select * from storage.buckets where id = $1`, [bucket])).rows[0];
+    if (!spec) return storageError(404, 'Bucket not found');
+    const contentType = String(headers['content-type'] ?? '').split(';')[0].trim();
+    if (spec.allowed_mime_types && !spec.allowed_mime_types.includes(contentType)) {
+      return storageError(415, `mime type ${contentType} is not supported`);
+    }
+    if (spec.file_size_limit && raw.length > Number(spec.file_size_limit)) {
+      return storageError(413, 'The object exceeded the maximum allowed size');
+    }
+    try {
+      const [row] = await asRequester(claims, async () =>
+        (await db.query(
+          `insert into storage.objects (bucket_id, name, owner, metadata) values ($1, $2, $3, $4) returning id`,
+          [bucket, name, claims.sub, JSON.stringify({ mimetype: contentType, size: raw.length })],
+        )).rows,
+      );
+      await db.query(
+        `insert into emulator.storage_blobs (bucket_id, name, content_type, data) values ($1, $2, $3, $4)`,
+        [bucket, name, contentType, raw],
+      );
+      return { status: 200, body: { Id: row.id, Key: `${bucket}/${name}` } };
+    } catch (err) {
+      if (err.code === '23505') return storageError(409, 'The resource already exists');
+      if (err.code === '42501') return storageError(403, 'new row violates row-level security policy');
+      throw err;
+    }
+  }
+
+  return storageError(404, 'Rota de storage não suportada pelo emulador');
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +443,7 @@ const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
   'Access-Control-Allow-Headers':
-    'authorization, apikey, content-type, x-client-info, accept-profile, content-profile, prefer, x-supabase-api-version, x-retry-count',
+    'authorization, apikey, content-type, x-client-info, accept-profile, content-profile, prefer, x-supabase-api-version, x-retry-count, x-upsert, cache-control, x-metadata',
 };
 
 function send(res, status, body) {
@@ -319,19 +454,27 @@ function send(res, status, body) {
 async function readBody(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
-  if (chunks.length === 0) return {};
-  const text = Buffer.concat(chunks).toString('utf8');
+  return Buffer.concat(chunks);
+}
+
+function parseJson(raw) {
+  const text = raw.length ? raw.toString('utf8') : '';
   return text ? JSON.parse(text) : {};
 }
 
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return send(res, 204, null);
   const url = new URL(req.url, `http://localhost:${PORT}`);
-  let body;
-  try {
-    body = await readBody(req);
-  } catch {
-    return send(res, 400, { code: 'PGRST102', message: 'JSON inválido' });
+  const raw = await readBody(req);
+  // Arquivos do Storage chegam como bytes; o resto da API fala JSON.
+  const isStorage = url.pathname.startsWith('/storage/v1');
+  let body = {};
+  if (!isStorage) {
+    try {
+      body = parseJson(raw);
+    } catch {
+      return send(res, 400, { code: 'PGRST102', message: 'JSON inválido' });
+    }
   }
   const bearer = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
   const claims = verifyJwt(bearer);
@@ -341,12 +484,18 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname.startsWith('/auth/v1')) {
         return handleAuth(req.method, url.pathname.slice('/auth/v1'.length), url.searchParams, body, claims);
       }
+      if (isStorage) return handleStorage(req.method, url.pathname.slice('/storage/v1'.length), url.searchParams, req.headers, raw, claims);
       const rpc = url.pathname.match(/^\/rest\/v1\/rpc\/([^/]+)$/);
       if (rpc && req.method === 'POST') return handleRpc(rpc[1], body, claims);
-      return { status: 404, body: { message: 'Rota não suportada pelo emulador (apenas /auth/v1 e /rest/v1/rpc).' } };
+      return { status: 404, body: { message: 'Rota não suportada pelo emulador (apenas /auth/v1, /rest/v1/rpc e /storage/v1).' } };
     });
     if (process.env.EMULATOR_LOG) console.log(`${req.method} ${url.pathname} → ${result.status}`);
-    send(res, result.status, result.body);
+    if (result.raw) {
+      res.writeHead(result.status, { ...CORS, 'Content-Type': result.contentType, 'Cache-Control': 'public, max-age=3600' });
+      res.end(result.raw);
+    } else {
+      send(res, result.status, result.body);
+    }
   } catch (err) {
     console.error('[emulador] falha inesperada', err);
     send(res, 500, { message: 'Erro interno do emulador' });
@@ -363,6 +512,15 @@ if (args.includes('--seed')) {
     console.log('[emulador] --seed ignorado: o banco já possui projetos (use --reset --seed para recriar).');
   }
 }
+// No Supabase o pg_cron grava o fechamento semanal no sábado; aqui não há pg_cron,
+// então o emulador fecha a semana anterior ao iniciar e confere de hora em hora.
+async function closeRankingWeek() {
+  const { rows } = await db.query(`select private.close_ranking_week(1) as n`);
+  if (rows[0].n > 0) console.log(`[emulador] fechamento semanal gravado (${rows[0].n} posições)`);
+}
+await serialize(closeRankingWeek);
+setInterval(() => serialize(closeRankingWeek).catch((err) => console.error('[emulador] fechamento semanal', err)), 3_600_000).unref();
+
 server.listen(PORT, () => {
   console.log(`[emulador] Supabase local em http://localhost:${PORT}${fresh ? ' (banco novo)' : ''}`);
   console.log('[emulador] apenas para desenvolvimento — dados em ./.local-supabase');

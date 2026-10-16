@@ -3,25 +3,13 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowRight, AtSign, KeyRound, Loader2, MailCheck, UserRound } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { LIMITS, lengthError } from '@/lib/domain';
+import { MIN_PASSWORD, authMessage } from '@/lib/errors';
 import { FormError } from '@/components/Modal';
 import { AuthField, AuthShell } from '@/components/AuthShell';
 import { DemoLogin } from '@/components/DemoLogin';
 import { usePageTitle } from '@/lib/navigation';
 
 type Mode = 'login' | 'signup' | 'forgot';
-const MIN_PASSWORD = 8;
-
-/** Traduz as mensagens mais comuns do Supabase Auth. */
-function authMessage(message: string): string {
-  if (/invalid login credentials/i.test(message)) return 'E-mail ou senha incorretos.';
-  if (/email not confirmed/i.test(message)) return 'Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada.';
-  if (/user already registered/i.test(message)) return 'Já existe uma conta com este e-mail.';
-  if (/password should be at least/i.test(message)) return `A senha deve ter pelo menos ${MIN_PASSWORD} caracteres.`;
-  if (/rate limit|too many/i.test(message)) return 'Muitas tentativas. Aguarde alguns minutos e tente novamente.';
-  if (/signups not allowed/i.test(message)) return 'Novos cadastros estão desativados. Fale com um administrador.';
-  if (/failed to fetch|network/i.test(message)) return 'Não foi possível conectar ao servidor. Verifique sua conexão.';
-  return 'Não foi possível concluir a operação. Tente novamente.';
-}
 
 const COPY: Record<Mode, { title: string; subtitle: string; submit: string }> = {
   login: {

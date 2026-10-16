@@ -17,6 +17,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { ProfilePage } from '@/pages/ProfilePage';
 import { ProjectPage } from '@/pages/ProjectPage';
 import { ProjectsPage } from '@/pages/ProjectsPage';
+import { PublicProfilePage } from '@/pages/PublicProfilePage';
 import { RankingPage } from '@/pages/RankingPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 import { SuggestionPage } from '@/pages/SuggestionPage';
@@ -104,6 +105,7 @@ export default function App() {
                   <Route path="sugestoes/:suggestionId" element={<SuggestionPage />} />
                   <Route path="ranking" element={<RankingPage />} />
                   <Route path="perfil" element={<ProfilePage />} />
+                  <Route path="pessoas/:userId" element={<PublicProfilePage />} />
                   <Route path="diretrizes" element={<GuidelinesPage />} />
                   {/* Exclusivas de administrador. */}
                   <Route element={<RequireAdmin />}>

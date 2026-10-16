@@ -47,6 +47,7 @@ export function StatusDialog({ open, onOpenChange, suggestionId, projectId, curr
         qk.auditLog,
         qk.mySuggestions,
         qk.adminSuggestions,
+        qk.userSuggestionLists,
       ]) {
         queryClient.invalidateQueries({ queryKey: key });
       }

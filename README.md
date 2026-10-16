@@ -60,7 +60,7 @@ A página inicial é a tela principal do administrador. Os cartões **Projetos**
 
 ### Projeto conectado
 
-O repositório está vinculado ao projeto Supabase **hv-ideias** (`ksecprrlkwxiinmermbd`). As três migrações já foram aplicadas e o `.env.local` (fora do git) aponta para ele com a chave pública. Para rodar contra o banco real: `npm run dev` (http://localhost:5173).
+O repositório está vinculado ao projeto Supabase **hv-ideias** (`ksecprrlkwxiinmermbd`). Confira com `supabase migration list` quais migrações já estão aplicadas e o `.env.local` (fora do git) aponta para ele com a chave pública. Para rodar contra o banco real: `npm run dev` (http://localhost:5173).
 
 - Auth: Site URL `http://localhost:5173` e redirecionamento `http://localhost:5173/redefinir-senha`. Ao publicar o site, troque pelas URLs de produção (Authentication → URL Configuration).
 - Confirmação de e-mail ligada. O SMTP padrão da Supabase só entrega para membros da organização e tem limite baixo de envios; para outros usuários, configure um SMTP próprio.
@@ -68,7 +68,7 @@ O repositório está vinculado ao projeto Supabase **hv-ideias** (`ksecprrlkwxii
 
 ### Opção 2: emulador local (sem Docker e sem projeto Supabase)
 
-Para desenvolvimento e testes manuais, `scripts/local/server.mjs` emula as rotas do Supabase que o app usa (`/auth/v1` e `/rest/v1/rpc`), aplicando **as mesmas migrações** num Postgres embutido. Não é um substituto de produção: não envia e-mails, só tem login por e-mail/senha e guarda os dados em `./.local-supabase`.
+Para desenvolvimento e testes manuais, `scripts/local/server.mjs` emula as rotas do Supabase que o app usa (`/auth/v1`, `/rest/v1/rpc` e o Storage das fotos, com links assinados e as mesmas políticas de acesso), aplicando **as mesmas migrações** num Postgres embutido. Não é um substituto de produção: não envia e-mails (a troca de e-mail é imediata), só tem login por e-mail/senha, não tem pg_cron (fecha o ranking semanal ao iniciar e de hora em hora) e guarda os dados em `./.local-supabase`.
 
 Em dois terminais:
 
@@ -108,7 +108,18 @@ Hospedagem: é uma SPA estática. O arquivo `public/_redirects` faz o fallback d
 **Pontuação**
 - `pontuação = votos positivos válidos recebidos × 0,5`, calculada a partir dos votos armazenados (view `private.user_scores`, regra única em `private.points_per_vote()`). Não existe campo de pontos editável.
 - Não geram pontos: publicar, comentar, mudar de status, votos retirados, sugestões excluídas e sugestões de projetos excluídos.
-- Ranking ordenado por pontos; desempate por mais votos recebidos, depois participação mais antiga (primeira sugestão). Exibe apenas nome público, sem e-mail nem IDs. Contas desativadas não aparecem.
+- Ranking ordenado por pontos; desempate por mais votos recebidos, depois participação mais antiga (primeira sugestão). Exibe nome público e foto (com link para o perfil público), nunca e-mail. Contas desativadas não aparecem.
+
+**Ranking semanal**
+- A semana vai de sábado 00:00 a sexta 23:59 (horário de Brasília) e conta só os votos recebidos nela; o ranking geral não muda.
+- Na sexta, o botão RANKING abre o pódio do fechamento (com animação) e o modal abre sozinho uma vez no dia.
+- No sábado 00:05 o `pg_cron` grava o top 10 da semana em `weekly_results`; semanas encerradas passam a vir do registro gravado (não mudam mais) e o top 3 vira medalha no perfil e notificação.
+
+**Perfil, fotos e notificações**
+- Perfil público em `/pessoas/:id`: posição, pontos, medalhas e sugestões da pessoa.
+- Foto de perfil enquadrada no navegador e reduzida para 256×256; fica no bucket **privado** `avatars` e só contas ativas a veem (links assinados de 1 hora). Administradores removem fotos impróprias (com auditoria).
+- Notificações no app (sininho): votos e comentários nas suas ideias (agrupados por sugestão), mudanças de status e pódio da semana. São geradas por triggers.
+- Busca em todos os projetos (botão de lupa ou Ctrl+K) e aviso de ideias parecidas ao escrever uma sugestão nova.
 
 **Sugestões**
 - O autor edita e exclui a própria sugestão apenas enquanto ela está *Em análise*. Depois disso, só a administração.
@@ -152,7 +163,8 @@ Hospedagem: é uma SPA estática. O arquivo `public/_redirects` faz o fallback d
 - Limites de requisição no banco: 10 sugestões/hora, 10 comentários/5 min, 60 votos/min por usuário.
 - Erros de negócio usam códigos próprios (`HV401`, `HV403`, `HV404`, `HV409`, `HV422`, `HV429`) com mensagens para o usuário final. Qualquer outro erro vira uma mensagem genérica, sem detalhes internos.
 - Auditoria (`audit_log`) de criação/edição/exclusão de projetos, edição/exclusão de sugestões por administradores, mudanças de status, moderação de comentários e alterações de contas.
-- **Contas não são excluídas, são desativadas** (Gestão da plataforma → Usuários): a pessoa perde a capacidade de publicar, votar e comentar e sai do ranking, mas o conteúdo publicado é preservado.
+- **Administradores desativam contas** (Gestão da plataforma → Usuários): a pessoa perde a capacidade de publicar, votar e comentar e sai do ranking, mas o conteúdo publicado é preservado.
+- **LGPD:** cada pessoa baixa os próprios dados em JSON e pode excluir a conta (com a senha atual). A exclusão apaga o login, os votos dados, as notificações e a foto, marca os comentários como removidos e anonimiza o perfil ("Participante removido"); as sugestões permanecem, sem nome.
 - As migrações desligam os privilégios padrão do Supabase no schema `public`: tabelas e funções criadas em migrações futuras não ficam acessíveis até receberem um `grant` explícito.
 
 ## Testes
@@ -173,7 +185,7 @@ npm test
 - **H** comentários e moderação
 - **I** registros inexistentes e projetos arquivados
 
-Os cenários de interface (incluindo **J**, responsividade) foram validados manualmente no navegador com o emulador local.
+Também cobre ranking semanal e fechamento gravado, fotos (Storage e moderação), notificações, perfil público, busca e privacidade (exportar e excluir conta). Em `src/**/__tests__` ficam os testes de interface (modal do ranking, troca de senha, links das fotos). Os demais cenários de interface (incluindo **J**, responsividade) foram validados manualmente no navegador com o emulador local.
 
 ## Pendências e evolução
 
@@ -182,4 +194,4 @@ Os cenários de interface (incluindo **J**, responsividade) foram validados manu
 - **Backup**: use os backups diários / Point-in-Time Recovery do plano Supabase. O emulador local não tem backup.
 - **Termos de Uso e Privacidade**: não foram publicados (dependem de texto jurídico). O rodapé só tem links para páginas que existem.
 - **Categorias** são texto livre no projeto (com sugestões no formulário). **Tipos de sugestão** são uma tabela: para criar um tipo, basta inserir uma linha em `public.suggestion_types`, sem mudar código.
-- Evoluções previstas, ainda não implementadas: notificações, ranking por projeto/período, favoritos, tags, relatórios administrativos e integrações internas.
+- Evoluções previstas, ainda não implementadas: notificações por e-mail, ranking por projeto, favoritos, tags, relatórios administrativos e integrações internas.

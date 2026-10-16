@@ -5,6 +5,7 @@ import { api, qk, type SuggestionInput } from '@/lib/api';
 import { LIMITS, lengthError } from '@/lib/domain';
 import { errorMessage } from '@/lib/errors';
 import { FormError, Modal } from './Modal';
+import { SimilarSuggestions } from './SimilarSuggestions';
 import { CharCounter } from './ui';
 import { useToast } from './Toast';
 
@@ -152,6 +153,7 @@ export function SuggestionFormDialog({ open, onOpenChange, projectId, projectNam
               {errors.title}
             </p>
           )}
+          {!editing && <SimilarSuggestions projectId={projectId} title={values.title} />}
         </div>
 
         <div>

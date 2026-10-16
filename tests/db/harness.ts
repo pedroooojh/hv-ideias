@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 const MIGRATIONS_DIR = join(__dirname, '..', '..', 'supabase', 'migrations');
 
 const SUPABASE_STUB = readFileSync(join(__dirname, '..', '..', 'scripts', 'local', 'supabase-stub.sql'), 'utf8');
+const STORAGE_STUB = readFileSync(join(__dirname, '..', '..', 'scripts', 'local', 'storage-stub.sql'), 'utf8');
 
 export type Row = Record<string, unknown>;
 
@@ -29,6 +30,7 @@ export interface TestDb {
 export async function createTestDb(): Promise<TestDb> {
   const db = new PGlite();
   await db.exec(SUPABASE_STUB);
+  await db.exec(STORAGE_STUB);
   const files = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
   for (const file of files) {
     await db.exec(readFileSync(join(MIGRATIONS_DIR, file), 'utf8'));

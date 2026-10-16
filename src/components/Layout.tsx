@@ -1,11 +1,18 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { UserRound } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Search, Trophy, UserRound } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
+import { api, qk } from '@/lib/api';
+import { isRankingClosingDay, rankingDayKey } from '@/lib/format';
+import { NotificationBell } from './NotificationBell';
+import { RankingDialog } from './RankingDialog';
+import { SearchDialog, useSearchShortcut } from './SearchDialog';
 import { ThemeToggle } from './ThemeToggle';
+import { Avatar, toneFor } from './ui';
 
 const iconButton =
-  'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-line bg-subtle/70 text-ink transition-colors duration-200 hover:bg-subtle hover:text-brand sm:h-11 sm:w-11';
+  'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-subtle/70 text-ink transition-colors duration-200 hover:bg-subtle hover:text-brand min-[360px]:h-9 min-[360px]:w-9 sm:h-11 sm:w-11';
 
 export function Logo({ className = '' }: { className?: string }) {
   return (
@@ -16,8 +23,18 @@ export function Logo({ className = '' }: { className?: string }) {
   );
 }
 
-function Header() {
+function Header({
+  rankingOpen,
+  onOpenRanking,
+  onOpenSearch,
+}: {
+  rankingOpen: boolean;
+  onOpenRanking: () => void;
+  onOpenSearch: () => void;
+}) {
   const { profile } = useAuth();
+  const { pathname } = useLocation();
+  const rankingActive = rankingOpen || pathname === '/ranking';
   const ref = useRef<HTMLElement>(null);
 
   // Publica a altura real do cabeçalho em --header-h, para seções que ocupam
@@ -58,28 +75,39 @@ function Header() {
         <Link to="/" className="shrink-0 rounded-lg" aria-label="Hubvision Ideias — página inicial">
           <Logo />
         </Link>
-        <nav className="flex items-center gap-1.5 sm:gap-3" aria-label="Navegação principal">
+        <nav className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-3" aria-label="Navegação principal">
+          <button type="button" className={iconButton} onClick={onOpenSearch} aria-label="Buscar sugestões (Ctrl+K)" title="Buscar (Ctrl+K)">
+            <Search className="h-5 w-5" />
+          </button>
           <ThemeToggle className={`${iconButton} hidden sm:inline-flex`} />
+          <NotificationBell className={iconButton} onOpenRanking={onOpenRanking} />
           <NavLink
             to="/perfil"
             className={iconButton}
             aria-label={`Meu perfil (${profile?.name ?? 'conta'})`}
             title="Meu perfil"
           >
-            <UserRound className="h-5 w-5" />
+            {profile?.avatar_path ? (
+              <Avatar name={profile.name} photo={profile.avatar_path} tone={toneFor(profile.name)} />
+            ) : (
+              <UserRound className="h-5 w-5" />
+            )}
           </NavLink>
-          <NavLink
-            to="/ranking"
-            className={({ isActive }) =>
-              `inline-flex h-9 shrink-0 items-center rounded-lg border-2 px-3 text-xs font-semibold tracking-wide transition-colors duration-200 sm:h-11 sm:px-6 sm:text-sm ${
-                isActive
-                  ? 'border-brand bg-brand text-white dark:text-page'
-                  : 'border-brand/70 text-brand hover:bg-brand-soft'
-              }`
-            }
+          <button
+            type="button"
+            onClick={onOpenRanking}
+            aria-haspopup="dialog"
+            aria-label="Ranking"
+            className={`inline-flex h-8 shrink-0 items-center rounded-lg border-2 px-1.5 text-xs font-semibold tracking-wide transition-colors duration-200 min-[360px]:h-9 min-[360px]:px-2 min-[480px]:px-3 sm:h-11 sm:px-6 sm:text-sm ${
+              rankingActive
+                ? 'border-brand bg-brand text-white dark:text-page'
+                : 'border-brand/70 text-brand hover:bg-brand-soft'
+            }`}
           >
-            RANKING
-          </NavLink>
+            {/* Em telas bem estreitas só o troféu cabe ao lado dos outros botões. */}
+            <Trophy className="h-4 w-4 min-[480px]:hidden" aria-hidden />
+            <span className="hidden min-[480px]:inline">RANKING</span>
+          </button>
         </nav>
       </div>
     </header>
@@ -122,7 +150,45 @@ function Footer() {
   );
 }
 
+const REVEAL_KEY = 'hv-ranking-fechamento-visto';
+
+/**
+ * Às sextas (dia do fechamento do ranking semanal) o modal abre sozinho com o
+ * pódio, uma vez por dia e só se alguém pontuou na semana.
+ */
+function useClosingDayReveal(open: () => void) {
+  const [pending] = useState(() => {
+    if (!isRankingClosingDay()) return false;
+    try {
+      return window.localStorage.getItem(REVEAL_KEY) !== rankingDayKey();
+    } catch {
+      return false;
+    }
+  });
+  const shown = useRef(false);
+  const weekly = useQuery({ queryKey: qk.weeklyRanking(0), queryFn: () => api.getWeeklyRanking(0), enabled: pending });
+
+  useEffect(() => {
+    const data = weekly.data;
+    if (!pending || shown.current || !data?.is_closing_day || data.entries.length === 0) return;
+    shown.current = true;
+    try {
+      window.localStorage.setItem(REVEAL_KEY, rankingDayKey());
+    } catch {
+      // Sem armazenamento: abre só nesta visita.
+    }
+    open();
+  }, [pending, weekly.data, open]);
+}
+
 export function Layout() {
+  const [rankingOpen, setRankingOpen] = useState(false);
+  const openRanking = useRef(() => setRankingOpen(true)).current;
+  useClosingDayReveal(openRanking);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const openSearch = useRef(() => setSearchOpen(true)).current;
+  useSearchShortcut(openSearch);
+
   return (
     <div className="flex min-h-screen flex-col overflow-x-clip">
       <a
@@ -131,7 +197,9 @@ export function Layout() {
       >
         Pular para o conteúdo
       </a>
-      <Header />
+      <Header rankingOpen={rankingOpen} onOpenRanking={openRanking} onOpenSearch={openSearch} />
+      <RankingDialog open={rankingOpen} onOpenChange={setRankingOpen} />
+      <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       <main id="conteudo" className="flex-1">
         <PageTransition />
       </main>

@@ -43,7 +43,7 @@ export function VoteButton({
         data ? { ...data, pages: data.pages.map((p) => ({ ...p, items: p.items.map(patch) })) } : data,
       );
       queryClient.setQueryData<SuggestionDetail>(qk.suggestion(suggestionId), (data) => (data ? patch(data) : data));
-      for (const key of [qk.stats, qk.projects, qk.project(projectId), qk.ranking, qk.myScore]) {
+      for (const key of [qk.stats, qk.projects, qk.project(projectId), qk.ranking, qk.myScore, qk.publicProfiles, qk.userSuggestionLists]) {
         queryClient.invalidateQueries({ queryKey: key });
       }
     },

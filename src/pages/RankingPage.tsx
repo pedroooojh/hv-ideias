@@ -4,6 +4,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Medal, Trophy } from 'lucide-react';
 import { api, qk } from '@/lib/api';
 import { formatNumber, formatPoints, plural } from '@/lib/format';
+import { PersonLink } from '@/components/PersonLink';
 import { Avatar, EmptyState, ErrorState, LoadMore, PageContainer, Skeleton, toneFor } from '@/components/ui';
 
 const MEDALS = ['text-[#d4a017]', 'text-[#9aa4b2]', 'text-[#c07a3f]'];
@@ -103,8 +104,8 @@ export function RankingPage() {
                       </span>
                     </td>
                     <td className="min-w-0 sm:px-6 sm:py-4">
-                      <span className="flex items-center gap-3">
-                        <Avatar name={r.user_name} size="md" tone={toneFor(r.user_name)} />
+                      <PersonLink id={r.user_id} className="flex items-center gap-3">
+                        <Avatar name={r.user_name} photo={r.user_avatar} size="md" tone={toneFor(r.user_name)} />
                         <span className="min-w-0">
                           <span className="block truncate font-semibold text-ink">
                             {r.user_name}
@@ -114,7 +115,7 @@ export function RankingPage() {
                             {plural(r.suggestion_count, 'sugestão', 'sugestões')} · {plural(r.votes_received, 'voto', 'votos')}
                           </span>
                         </span>
-                      </span>
+                      </PersonLink>
                     </td>
                     <td className="hidden px-6 py-4 text-right text-muted sm:table-cell">{formatNumber(r.suggestion_count)}</td>
                     <td className="hidden px-6 py-4 text-right text-muted sm:table-cell">{formatNumber(r.votes_received)}</td>

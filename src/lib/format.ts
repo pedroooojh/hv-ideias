@@ -39,3 +39,27 @@ export function initials(name: string | null | undefined): string {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
+
+/** Fuso do ranking semanal: a semana fecha na sexta, no horário de Brasília. */
+export const RANKING_TZ = 'America/Sao_Paulo';
+const weekDayFormatter = new Intl.DateTimeFormat('pt-BR', { timeZone: RANKING_TZ, day: 'numeric' });
+const weekMonthFormatter = new Intl.DateTimeFormat('pt-BR', { timeZone: RANKING_TZ, month: 'short' });
+const weekdayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: RANKING_TZ, weekday: 'short' });
+const dayKeyFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: RANKING_TZ });
+
+/** "10 a 16 de out." ou "27 de set. a 3 de out." — o fim é exclusivo (sábado 00:00 seguinte). */
+export function formatWeekRange(start: string | Date, endExclusive: string | Date): string {
+  const from = new Date(start);
+  const to = new Date(new Date(endExclusive).getTime() - 1);
+  const month = (d: Date) => weekMonthFormatter.format(d).replace(/\.?$/, '.');
+  const sameMonth = month(from) === month(to);
+  return sameMonth
+    ? `${weekDayFormatter.format(from)} a ${weekDayFormatter.format(to)} de ${month(to)}`
+    : `${weekDayFormatter.format(from)} de ${month(from)} a ${weekDayFormatter.format(to)} de ${month(to)}`;
+}
+
+/** Sexta-feira no horário de Brasília: dia do fechamento do ranking semanal. */
+export const isRankingClosingDay = (now: Date = new Date()) => weekdayFormatter.format(now) === 'Fri';
+
+/** Data no fuso do ranking (AAAA-MM-DD), para marcar "já vi o fechamento de hoje". */
+export const rankingDayKey = (now: Date = new Date()) => dayKeyFormatter.format(now);

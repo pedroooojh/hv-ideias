@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { toApiError } from './errors';
+import { ApiError, toApiError } from './errors';
 import type { ProjectStatus, SortOrder, SuggestionStatus } from './domain';
 
 // Tipos que espelham o retorno das funções RPC (supabase/migrations/*_api.sql).
@@ -11,6 +11,8 @@ export interface Profile {
   role: 'user' | 'admin';
   status: 'active' | 'disabled';
   created_at: string;
+  /** Caminho da foto no bucket "avatars" (ver avatarUrl). */
+  avatar_path: string | null;
 }
 
 export interface SuggestionType {
@@ -68,7 +70,9 @@ export interface SuggestionListItem {
   description: string;
   status: SuggestionStatus;
   status_reason: string | null;
+  author_id: string;
   author_name: string;
+  author_avatar: string | null;
   is_author: boolean;
   created_at: string;
   updated_at: string;
@@ -99,7 +103,10 @@ export interface StatusHistoryEntry {
 export interface CommentItem {
   id: string;
   content: string | null;
+  /** Nulo em comentário removido. */
+  author_id: string | null;
   author_name: string | null;
+  author_avatar: string | null;
   is_author: boolean;
   created_at: string;
   edited_at: string | null;
@@ -112,11 +119,96 @@ export interface CommentItem {
 
 export interface RankingEntry {
   rank_position: number;
+  user_id: string;
   user_name: string;
+  user_avatar: string | null;
   score: number;
   suggestion_count: number;
   votes_received: number;
   is_me: boolean;
+  total_count: number;
+}
+
+export interface WeeklyRanking {
+  week_start: string;
+  /** Fim exclusivo: sábado 00:00 da semana seguinte. */
+  week_end: string;
+  /** Sexta-feira: dia do fechamento da semana atual. */
+  is_closing_day: boolean;
+  /** Semana encerrada lida do fechamento gravado (não muda mais). */
+  is_final: boolean;
+  total_count: number;
+  entries: Omit<RankingEntry, 'total_count'>[];
+  me: { rank_position: number | null; score: number; votes_received: number };
+}
+
+export interface NotificationItem {
+  id: string;
+  kind: 'vote' | 'comment' | 'status' | 'podium';
+  suggestion_id: string | null;
+  suggestion_title: string | null;
+  actor_name: string | null;
+  actor_avatar: string | null;
+  event_count: number;
+  data: {
+    previous_status?: SuggestionStatus;
+    new_status?: SuggestionStatus;
+    reason?: string | null;
+    rank_position?: number;
+    score?: number;
+    week_start?: string;
+    week_end?: string;
+  };
+  created_at: string;
+  updated_at: string;
+  is_read: boolean;
+  total_count: number;
+}
+
+export interface Medals {
+  gold: number;
+  silver: number;
+  bronze: number;
+}
+
+export interface PublicProfile {
+  id: string;
+  name: string;
+  avatar_path: string | null;
+  member_since: string;
+  is_me: boolean;
+  rank_position: number | null;
+  score: number;
+  votes_received: number;
+  weekly_rank_position: number | null;
+  weekly_score: number;
+  suggestion_count: number;
+  medals: Medals;
+}
+
+export interface UserSuggestion {
+  id: string;
+  project_id: string;
+  project_name: string;
+  title: string;
+  status: SuggestionStatus;
+  created_at: string;
+  vote_count: number;
+  comment_count: number;
+  total_count: number;
+}
+
+export interface SearchResult {
+  id: string;
+  project_id: string;
+  project_name: string;
+  title: string;
+  status: SuggestionStatus;
+  author_id: string;
+  author_name: string;
+  author_avatar: string | null;
+  vote_count: number;
+  created_at: string;
   total_count: number;
 }
 
@@ -147,6 +239,7 @@ export interface AdminUser {
   status: 'active' | 'disabled';
   created_at: string;
   suggestion_count: number;
+  avatar_path: string | null;
   total_count: number;
 }
 
@@ -213,10 +306,60 @@ function toPage<T extends { total_count: number }>(rows: T[], offset: number, li
 
 export const PAGE_SIZE = 20;
 
+/** Bucket privado das fotos; para exibir, ver useAvatarUrl (links assinados). */
+const AVATAR_BUCKET = 'avatars';
+
+export interface PreparedImage {
+  data: ArrayBuffer;
+  type: string;
+  ext: 'webp' | 'jpg';
+}
+
+function storageError(error: { message?: string; statusCode?: string | number } | null): ApiError {
+  const status = Number((error as { statusCode?: string | number } | null)?.statusCode ?? 0);
+  if (status === 413) return new ApiError('A foto ficou grande demais. Tente outra imagem.', 'validation');
+  if (status === 415) return new ApiError('Formato de imagem não aceito. Use JPG, PNG ou WebP.', 'validation');
+  if (/failed to fetch|network/i.test(error?.message ?? '')) return toApiError({ name: 'TypeError', message: error?.message });
+  return new ApiError('Não foi possível enviar a foto. Tente novamente.', 'unknown');
+}
+
+async function removeAvatarFile(path: string | null) {
+  if (!path) return;
+  // Falha ao apagar o arquivo antigo não deve desfazer a troca: ele só fica órfão no bucket.
+  await supabase.storage.from(AVATAR_BUCKET).remove([path]).catch(() => undefined);
+}
+
 export const api = {
   // Perfil -------------------------------------------------------------------
   getMyProfile: () => rpcRows<Profile>('get_my_profile').then((rows) => rows[0] ?? null),
   updateMyProfile: (name: string) => rpc<void>('update_my_profile', { p_name: name }),
+  /** Envia a nova foto (já recortada), aponta o perfil para ela e apaga a anterior. */
+  uploadMyAvatar: async (userId: string, image: PreparedImage, previous: string | null) => {
+    const path = `${userId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.${image.ext}`;
+    const { error } = await supabase.storage
+      .from(AVATAR_BUCKET)
+      .upload(path, image.data, { contentType: image.type, upsert: false, cacheControl: '31536000' });
+    if (error) throw storageError(error);
+    try {
+      await rpc<void>('set_my_avatar', { p_path: path });
+    } catch (err) {
+      await removeAvatarFile(path);
+      throw err;
+    }
+    await removeAvatarFile(previous);
+    return path;
+  },
+  removeMyAvatar: async (previous: string | null) => {
+    await rpc<void>('set_my_avatar', { p_path: null });
+    await removeAvatarFile(previous);
+  },
+  /** Todos os dados da própria conta (LGPD), para baixar em JSON. */
+  exportMyData: () => rpc<Record<string, unknown>>('export_my_data'),
+  /** Exclui a conta (login, votos, foto) e anonimiza o perfil; depois é preciso sair. */
+  deleteMyAccount: async () => {
+    const photo = await rpc<string | null>('delete_my_account');
+    await removeAvatarFile(photo);
+  },
   getMyScore: () => rpcSingle<MyScore>('get_my_score'),
   listMySuggestions: async (filters: { status: SuggestionStatus | null }, offset = 0, limit = PAGE_SIZE) =>
     toPage(
@@ -329,6 +472,30 @@ export const api = {
   // Ranking ------------------------------------------------------------------
   getRanking: async (offset = 0, limit = 50) =>
     toPage(await rpcRows<RankingEntry>('get_ranking', { p_limit: limit, p_offset: offset }), offset, limit),
+  getWeeklyRanking: (weeksAgo = 0, limit = 10) =>
+    rpc<WeeklyRanking>('get_weekly_ranking', { p_weeks_ago: weeksAgo, p_limit: limit }),
+
+  // Perfil público ------------------------------------------------------------
+  getPublicProfile: (userId: string) => rpc<PublicProfile>('get_public_profile', { p_user_id: userId }),
+  listUserSuggestions: async (userId: string, offset = 0, limit = PAGE_SIZE) =>
+    toPage(await rpcRows<UserSuggestion>('list_user_suggestions', { p_user_id: userId, p_limit: limit, p_offset: offset }), offset, limit),
+
+  // Busca --------------------------------------------------------------------
+  /** matchAny: basta uma palavra no título (ideias parecidas); senão, todas as palavras. */
+  searchSuggestions: (search: string, opts: { projectId?: string; matchAny?: boolean; limit?: number } = {}) =>
+    rpcRows<SearchResult>('search_suggestions', {
+      p_search: search,
+      p_project_id: opts.projectId ?? null,
+      p_match_any: opts.matchAny ?? false,
+      p_limit: opts.limit ?? 10,
+    }),
+
+  // Notificações -------------------------------------------------------------
+  listMyNotifications: async (offset = 0, limit = 20) =>
+    toPage(await rpcRows<NotificationItem>('list_my_notifications', { p_limit: limit, p_offset: offset }), offset, limit),
+  countUnreadNotifications: () => rpc<number>('count_unread_notifications'),
+  /** Sem ids, marca todas. */
+  markNotificationsRead: (ids?: string[]) => rpc<void>('mark_notifications_read', { p_ids: ids ?? null }),
 
   // Administração ------------------------------------------------------------
   adminListSuggestions: async (
@@ -372,6 +539,11 @@ export const api = {
     rpc<Record<string, number>>('admin_user_status_counts', { p_search: filters.search || null, p_role: filters.role }),
   adminUpdateUser: (userId: string, role: AdminUser['role'], status: AdminUser['status']) =>
     rpc<void>('admin_update_user', { p_user_id: userId, p_role: role, p_status: status }),
+  /** Moderação: tira a foto do perfil (com auditoria) e apaga o arquivo. */
+  adminRemoveAvatar: async (userId: string) => {
+    const old = await rpc<string | null>('admin_remove_avatar', { p_user_id: userId });
+    await removeAvatarFile(old);
+  },
   adminListAuditLog: async (entityType: string | null, offset = 0, limit = 50) =>
     toPage(
       await rpcRows<AuditEntry>('admin_list_audit_log', {
@@ -409,7 +581,18 @@ export const qk = {
   statusHistory: (id: string) => ['status-history', id] as const,
   comments: (suggestionId: string) => ['comments', suggestionId] as const,
   ranking: ['ranking'] as const,
+  /** Começa com 'ranking': invalidar qk.ranking também atualiza o ranking semanal. */
+  weeklyRanking: (weeksAgo: number) => ['ranking', 'weekly', weeksAgo] as const,
   myScore: ['my-score'] as const,
+  /** Começa com 'profile': mudanças no perfil (nome, foto) também o atualizam. */
+  publicProfile: (userId: string) => ['profile', 'public', userId] as const,
+  /** Prefixo de todos os perfis públicos (números mudam com votos e exclusões). */
+  publicProfiles: ['profile', 'public'] as const,
+  userSuggestions: (userId: string) => ['suggestions', 'user', userId] as const,
+  userSuggestionLists: ['suggestions', 'user'] as const,
+  search: (term: string, scope: string) => ['search', scope, term] as const,
+  notifications: ['notifications'] as const,
+  unreadNotifications: ['notifications', 'unread'] as const,
   mySuggestions: ['my-suggestions'] as const,
   adminUsers: ['admin-users'] as const,
   adminSuggestions: ['admin-suggestions'] as const,

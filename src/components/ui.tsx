@@ -1,7 +1,8 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useBack, type BackTarget } from '@/lib/navigation';
 import { AlertCircle, ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
+import { useAvatarUrl } from '@/lib/avatarUrls';
 import { errorMessage, toApiError } from '@/lib/errors';
 import { initials } from '@/lib/format';
 import {
@@ -65,10 +66,43 @@ export function EmptyState({ icon, title, children }: { icon?: ReactNode; title:
   );
 }
 
-export function Avatar({ name, size = 'sm', tone = 0 }: { name: string | null; size?: 'sm' | 'md'; tone?: number }) {
+const AVATAR_DIMS = {
+  sm: 'h-7 w-7 text-[0.6875rem]',
+  md: 'h-10 w-10 text-sm',
+  lg: 'h-14 w-14 text-base',
+  xl: 'h-20 w-20 text-2xl',
+};
+
+/** Foto de perfil (caminho no Storage) ou, sem foto ou se ela falhar, as iniciais. */
+export function Avatar({
+  name,
+  photo,
+  size = 'sm',
+  tone = 0,
+}: {
+  name: string | null;
+  photo?: string | null;
+  size?: keyof typeof AVATAR_DIMS;
+  tone?: number;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [photo]);
   const tones = ['bg-navy text-white dark:text-page', 'bg-teal text-white dark:text-page', 'bg-ink text-page', 'bg-brand text-white dark:text-page'];
   const palette = tones[Math.abs(tone) % tones.length];
-  const dims = size === 'md' ? 'h-10 w-10 text-sm' : 'h-7 w-7 text-[0.6875rem]';
+  const dims = AVATAR_DIMS[size];
+  const src = useAvatarUrl(photo);
+  if (src && !failed) {
+    return (
+      <img
+        src={src}
+        alt=""
+        aria-hidden
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className={`shrink-0 rounded-full bg-subtle object-cover ${dims}`}
+      />
+    );
+  }
   return (
     <span className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold ${dims} ${palette}`} aria-hidden>
       {initials(name)}

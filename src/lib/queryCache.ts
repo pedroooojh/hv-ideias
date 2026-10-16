@@ -10,7 +10,7 @@ import { toApiError } from './errors';
 const CACHE_KEY = 'hv-ideias-cache';
 const OWNER_KEY = 'hv-ideias-cache-owner';
 /** Mude ao alterar o formato dos dados das RPCs: invalida caches antigos. */
-const CACHE_VERSION = '1';
+const CACHE_VERSION = '3';
 const DAY = 24 * 60 * 60 * 1000;
 
 /** Dados administrativos com informação pessoal (e-mails, auditoria) não vão para o navegador. */

@@ -160,7 +160,7 @@ describe('Cenário C — votação e pontuação (0,5 ponto por voto válido)', 
     expect(await scoreOf(autor)).toEqual({ score: 0, votes: 0, suggestions: 2 });
   });
 
-  it('ordena o ranking por pontos, depois votos e participação mais antiga, sem expor ids ou e-mails', async () => {
+  it('ordena o ranking por pontos, depois votos e participação mais antiga, sem expor e-mails', async () => {
     const [ana, bia, caio] = [await t.createUser('Ana'), await t.createUser('Bia'), await t.createUser('Caio')];
     const sa = await suggest(ana, 'Ideia da Ana');
     const sb = await suggest(bia, 'Ideia da Bia');
@@ -182,7 +182,7 @@ describe('Cenário C — votação e pontuação (0,5 ponto por voto válido)', 
     expect(ranking.find((r) => r.user_name === 'Caio')?.is_me).toBe(true);
     for (const r of ranking) {
       expect(Object.keys(r).sort()).toEqual(
-        ['is_me', 'rank_position', 'score', 'suggestion_count', 'total_count', 'user_name', 'votes_received'].sort(),
+        ['is_me', 'rank_position', 'score', 'suggestion_count', 'total_count', 'user_avatar', 'user_id', 'user_name', 'votes_received'].sort(),
       );
     }
   });
@@ -640,5 +640,430 @@ describe('Filtros padronizados', () => {
     for (const fn of ['admin_suggestion_status_counts', 'admin_user_status_counts']) {
       expect((await errorOf(ana.rpc(fn))).code, fn).toBe('HV403');
     }
+  });
+});
+
+describe('Ranking semanal (fechamento às sextas)', () => {
+  async function weekly(actor: Actor, weeksAgo = 0) {
+    const [{ get_weekly_ranking: w }] = await actor.rpc<{ get_weekly_ranking: Row }>('get_weekly_ranking', {
+      p_weeks_ago: weeksAgo,
+    });
+    return w as {
+      week_start: string;
+      week_end: string;
+      is_closing_day: boolean;
+      total_count: number;
+      entries: Row[];
+      me: { rank_position: number | null; score: number; votes_received: number };
+    };
+  }
+
+  it('conta só os votos recebidos na semana e mantém o ranking geral acumulado', async () => {
+    const [ana, bia, caio] = [await t.createUser('Ana'), await t.createUser('Bia'), await t.createUser('Caio')];
+    const sa = await suggest(ana, 'Ideia da Ana');
+    const sb = await suggest(bia, 'Ideia da Bia');
+    await suggest(caio, 'Ideia do Caio');
+    const pool = await voters(4);
+    for (const v of pool) await vote(v, sa);
+    for (const v of pool.slice(0, 2)) await vote(v, sb);
+    // Três votos da Ana foram dados na semana passada: contam no geral, não na semana atual.
+    await t.raw(
+      `update public.votes set created_at = (select week_start from private.ranking_week(1)) + interval '1 day'
+       where suggestion_id = $1 and user_id = any($2::uuid[])`,
+      [sa, pool.slice(0, 3).map((v) => v.id)],
+    );
+
+    const current = await weekly(caio);
+    expect(current.entries.map((r) => [r.rank_position, r.user_name, Number(r.score)])).toEqual([
+      [1, 'Bia', 1],
+      [2, 'Ana', 0.5],
+    ]);
+    expect(current.total_count).toBe(2);
+    expect(current.me).toEqual({ rank_position: null, score: 0, votes_received: 0 });
+    expect(new Date(current.week_end).getTime() - new Date(current.week_start).getTime()).toBe(7 * 86_400_000);
+
+    const last = await weekly(ana, 1);
+    expect(last.is_closing_day).toBe(false);
+    expect(last.entries.map((r) => [r.user_name, Number(r.score), r.is_me])).toEqual([['Ana', 1.5, true]]);
+    expect(last.me.rank_position).toBe(1);
+    expect(new Date(last.week_end).getTime()).toBe(new Date(current.week_start).getTime());
+
+    expect((await caio.rpc<Row>('get_ranking')).map((r) => [r.user_name, Number(r.score)])).toEqual([
+      ['Ana', 2],
+      ['Bia', 1],
+      ['Caio', 0],
+    ]);
+  });
+
+  it('a semana começa no sábado e o fechamento é na sexta (horário de Brasília)', async () => {
+    const [w] = await t.raw<{ dow: number; hour: number }>(
+      `select extract(dow from week_start at time zone 'America/Sao_Paulo')::int as dow,
+              extract(hour from week_start at time zone 'America/Sao_Paulo')::int as hour
+       from private.ranking_week(0)`,
+    );
+    expect(w).toEqual({ dow: 6, hour: 0 });
+    const [{ friday }] = await t.raw<{ friday: boolean }>(
+      `select extract(dow from now() at time zone 'America/Sao_Paulo') = 5 as friday`,
+    );
+    const ana = await t.createUser('Ana');
+    expect((await weekly(ana)).is_closing_day).toBe(friday);
+  });
+
+  it('valida parâmetros e exige login', async () => {
+    const ana = await t.createUser('Ana');
+    expect((await errorOf(ana.rpc('get_weekly_ranking', { p_weeks_ago: -1 }))).code).toBe('HV422');
+    expect((await errorOf(ana.rpc('get_weekly_ranking', { p_limit: 51 }))).code).toBe('HV422');
+    expect((await errorOf(t.anon.rpc('get_weekly_ranking'))).code).toBe('42501');
+  });
+});
+
+describe('Foto de perfil', () => {
+  const upload = (actor: Actor, name: string) =>
+    actor.sql(`insert into storage.objects (bucket_id, name, owner) values ('avatars', $1, $2)`, [name, actor.id]);
+
+  it('aparece para todos nas sugestões, comentários e rankings', async () => {
+    const ana = await t.createUser('Ana');
+    const bia = await t.createUser('Bia');
+    const path = `${ana.id}/foto-1.webp`;
+    await upload(ana, path);
+    await ana.rpc('set_my_avatar', { p_path: path });
+
+    const id = await suggest(ana, 'Ideia com foto');
+    await vote(bia, id);
+    await ana.rpc('create_comment', { p_suggestion_id: id, p_content: 'Comentário da Ana' });
+
+    const [profile] = await ana.rpc<Row>('get_my_profile');
+    expect(profile.avatar_path).toBe(path);
+    const [listed] = await bia.rpc<Row>('list_suggestions', { p_project_id: projectId });
+    expect(listed.author_avatar).toBe(path);
+    const [detail] = await bia.rpc<Row>('get_suggestion', { p_id: id });
+    expect(detail.author_avatar).toBe(path);
+    const [comment] = await bia.rpc<Row>('list_comments', { p_suggestion_id: id });
+    expect(comment.author_avatar).toBe(path);
+    const ranking = await bia.rpc<Row>('get_ranking');
+    expect(ranking.find((r) => r.user_name === 'Ana')?.user_avatar).toBe(path);
+    const [{ get_weekly_ranking: weekly }] = await bia.rpc<{ get_weekly_ranking: { entries: Row[] } }>('get_weekly_ranking');
+    expect(weekly.entries[0].user_avatar).toBe(path);
+
+    await ana.rpc('set_my_avatar', { p_path: null });
+    const [cleared] = await bia.rpc<Row>('get_suggestion', { p_id: id });
+    expect(cleared.author_avatar).toBeNull();
+  });
+
+  it('só aceita arquivo na própria pasta, com formato válido', async () => {
+    const ana = await t.createUser('Ana');
+    const bia = await t.createUser('Bia');
+    for (const p of [`${bia.id}/foto.webp`, `${ana.id}/../x.webp`, `${ana.id}/foto.gif`, 'foto.webp']) {
+      expect((await errorOf(ana.rpc('set_my_avatar', { p_path: p }))).code, p).toBe('HV422');
+    }
+    expect((await errorOf(ana.sql(`update public.profiles set avatar_path = null where id = $1`, [ana.id]))).code).toBe('42501');
+  });
+
+  it('o Storage só deixa enviar e apagar na própria pasta, e só com conta ativa', async () => {
+    const ana = await t.createUser('Ana');
+    const bia = await t.createUser('Bia');
+    await upload(ana, `${ana.id}/a.webp`);
+    expect((await errorOf(upload(ana, `${bia.id}/intrusa.webp`))).code).toBe('42501');
+    expect((await errorOf(t.anon.sql(`insert into storage.objects (bucket_id, name) values ('avatars', 'x/y.webp')`))).code).toBe('42501');
+
+    const deleted = await bia.sql(`delete from storage.objects where name = $1 returning name`, [`${ana.id}/a.webp`]);
+    expect(deleted).toEqual([]);
+    expect(await ana.sql(`delete from storage.objects where name = $1 returning name`, [`${ana.id}/a.webp`])).toHaveLength(1);
+
+    await admin.rpc('admin_update_user', { p_user_id: bia.id, p_role: 'user', p_status: 'disabled' });
+    expect((await errorOf(upload(bia, `${bia.id}/b.webp`))).code).toBe('42501');
+  });
+});
+
+describe('Moderação de fotos', () => {
+  it('administrador remove a foto de qualquer pessoa, apaga o arquivo e registra na auditoria', async () => {
+    const ana = await t.createUser('Ana');
+    const bia = await t.createUser('Bia');
+    const path = `${ana.id}/foto.webp`;
+    await ana.sql(`insert into storage.objects (bucket_id, name, owner) values ('avatars', $1, $2)`, [path, ana.id]);
+    await ana.rpc('set_my_avatar', { p_path: path });
+
+    expect((await errorOf(bia.rpc('admin_remove_avatar', { p_user_id: ana.id }))).code).toBe('HV403');
+    expect(await bia.sql(`delete from storage.objects where name = $1 returning name`, [path])).toEqual([]);
+
+    const [{ admin_remove_avatar: old }] = await admin.rpc<{ admin_remove_avatar: string }>('admin_remove_avatar', { p_user_id: ana.id });
+    expect(old).toBe(path);
+    expect(await admin.sql(`delete from storage.objects where name = $1 returning name`, [path])).toHaveLength(1);
+    const [profile] = await ana.rpc<Row>('get_my_profile');
+    expect(profile.avatar_path).toBeNull();
+
+    const [entry] = await admin.rpc<Row>('admin_list_audit_log', { p_entity_type: 'user' });
+    expect(entry.action).toBe('user.avatar_remove');
+    // Sem foto, não há o que remover nem o que auditar.
+    const [{ admin_remove_avatar: again }] = await admin.rpc<{ admin_remove_avatar: string | null }>('admin_remove_avatar', { p_user_id: ana.id });
+    expect(again).toBeNull();
+  });
+});
+
+describe('Fechamento semanal gravado', () => {
+  async function lastWeek(actor: Actor) {
+    const [{ get_weekly_ranking: w }] = await actor.rpc<{ get_weekly_ranking: Row }>('get_weekly_ranking', { p_weeks_ago: 1 });
+    return w as { is_final: boolean; entries: Row[]; me: { rank_position: number | null } };
+  }
+
+  it('grava o top da semana encerrada, não muda depois e conta medalhas', async () => {
+    const [ana, bia] = [await t.createUser('Ana'), await t.createUser('Bia')];
+    const sa = await suggest(ana, 'Ideia da Ana');
+    const sb = await suggest(bia, 'Ideia da Bia');
+    const pool = await voters(3);
+    for (const v of pool) await vote(v, sa);
+    await vote(pool[0], sb);
+    await t.raw(`update public.votes set created_at = (select week_start from private.ranking_week(1)) + interval '2 days'`);
+
+    expect((await lastWeek(ana)).is_final).toBe(false);
+    expect((await errorOf(t.raw(`select private.close_ranking_week(0)`))).code).toBe('HV422');
+    const [{ n }] = await t.raw<{ n: number }>(`select private.close_ranking_week(1) as n`);
+    expect(n).toBe(2);
+    const [{ n: again }] = await t.raw<{ n: number }>(`select private.close_ranking_week(1) as n`);
+    expect(again).toBe(0);
+
+    // Excluir a sugestão da Ana depois do fechamento não altera o pódio gravado.
+    await ana.rpc('delete_suggestion', { p_id: sa });
+    const closed = await lastWeek(bia);
+    expect(closed.is_final).toBe(true);
+    expect(closed.entries.map((r) => [r.rank_position, r.user_name, Number(r.score)])).toEqual([
+      [1, 'Ana', 1.5],
+      [2, 'Bia', 0.5],
+    ]);
+    expect(closed.me.rank_position).toBe(2);
+
+    const [{ medals }] = await t.raw<{ medals: Row }>(`select private.user_medals($1) as medals`, [ana.id]);
+    expect(medals).toEqual({ gold: 1, silver: 0, bronze: 0 });
+  });
+
+  it('a tabela de fechamentos não é acessível diretamente', async () => {
+    const ana = await t.createUser('Ana');
+    expect((await errorOf(ana.sql(`select * from public.weekly_results`))).code).toBe('42501');
+    expect((await errorOf(ana.sql(`select private.close_ranking_week(1)`))).code).toBe('42501');
+  });
+});
+
+describe('Notificações', () => {
+  const list = (actor: Actor) => actor.rpc<Row>('list_my_notifications');
+  const unread = async (actor: Actor) =>
+    Number((await actor.rpc<{ count_unread_notifications: number }>('count_unread_notifications'))[0].count_unread_notifications);
+
+  it('avisa o autor de votos e comentários agrupando por sugestão, sem avisar a própria pessoa', async () => {
+    const ana = await t.createUser('Ana');
+    const id = await suggest(ana, 'Ideia notificada');
+    const [bia, caio] = await voters(2);
+    await vote(bia, id);
+    await vote(caio, id);
+    await vote(caio, id, false);
+    await vote(caio, id);
+    await bia.rpc('create_comment', { p_suggestion_id: id, p_content: 'Gostei' });
+    await ana.rpc('create_comment', { p_suggestion_id: id, p_content: 'Obrigada!' });
+
+    const items = await list(ana);
+    expect(items.map((n) => [n.kind, n.event_count, n.suggestion_title, n.is_read])).toEqual([
+      ['comment', 1, 'Ideia notificada', false],
+      ['vote', 2, 'Ideia notificada', false],
+    ]);
+    expect(items[1].actor_name).toBe('Votante 2');
+    expect(await unread(ana)).toBe(2);
+    expect(await list(bia)).toEqual([]);
+
+    // Depois de lida, um novo voto abre outra notificação.
+    await ana.rpc('mark_notifications_read', { p_ids: [items[1].id] });
+    expect(await unread(ana)).toBe(1);
+    const [dani] = await voters(1, 'Dani');
+    await vote(dani, id);
+    expect((await list(ana)).filter((n) => n.kind === 'vote').map((n) => [n.event_count, n.is_read])).toEqual([
+      [1, false],
+      [2, true],
+    ]);
+    await ana.rpc('mark_notifications_read');
+    expect(await unread(ana)).toBe(0);
+  });
+
+  it('avisa mudança de status feita pela administração e pódio da semana', async () => {
+    const ana = await t.createUser('Ana');
+    const id = await suggest(ana, 'Ideia com status');
+    await admin.rpc('set_suggestion_status', { p_id: id, p_status: 'planejado' });
+    const [status] = await list(ana);
+    expect(status.kind).toBe('status');
+    expect(status.data).toMatchObject({ previous_status: 'em_analise', new_status: 'planejado' });
+    expect(status.actor_name).toBe('Admin Hubvision');
+
+    const [v] = await voters(1);
+    await vote(v, id);
+    await t.raw(`update public.votes set created_at = (select week_start from private.ranking_week(1)) + interval '1 day'`);
+    await t.raw(`select private.close_ranking_week(1)`);
+    const podium = (await list(ana)).find((n) => n.kind === 'podium');
+    expect(podium?.data).toMatchObject({ rank_position: 1 });
+  });
+
+  it('cada um só vê e marca as próprias notificações', async () => {
+    const ana = await t.createUser('Ana');
+    const bia = await t.createUser('Bia');
+    await vote(bia, await suggest(ana, 'Ideia privada'));
+    const [mine] = await list(ana);
+    await bia.rpc('mark_notifications_read', { p_ids: [mine.id] });
+    expect(await unread(ana)).toBe(1);
+    expect((await errorOf(bia.sql(`select * from public.notifications`))).code).toBe('42501');
+    expect((await errorOf(t.anon.rpc('count_unread_notifications'))).code).toBe('42501');
+  });
+});
+
+describe('Perfil público', () => {
+  it('mostra posição, pontos, medalhas e sugestões da pessoa, sem e-mail', async () => {
+    const ana = await t.createUser('Ana', { email: 'ana@exemplo.test' });
+    const bia = await t.createUser('Bia');
+    const a1 = await suggest(ana, 'Primeira ideia da Ana');
+    const a2 = await suggest(ana, 'Segunda ideia da Ana');
+    await vote(bia, a1);
+    await t.raw(`update public.votes set created_at = (select week_start from private.ranking_week(1)) + interval '1 day'`);
+    await t.raw(`select private.close_ranking_week(1)`);
+    await vote(bia, a2);
+
+    const [{ get_public_profile: p }] = await bia.rpc<{ get_public_profile: Row }>('get_public_profile', { p_user_id: ana.id });
+    expect(p).toMatchObject({
+      id: ana.id,
+      name: 'Ana',
+      is_me: false,
+      rank_position: 1,
+      score: 1,
+      votes_received: 2,
+      weekly_rank_position: 1,
+      weekly_score: 0.5,
+      suggestion_count: 2,
+      medals: { gold: 1, silver: 0, bronze: 0 },
+    });
+    expect(JSON.stringify(p)).not.toContain('exemplo.test');
+
+    const list = await bia.rpc<Row>('list_user_suggestions', { p_user_id: ana.id });
+    expect(list.map((s) => [s.title, Number(s.vote_count)])).toEqual([
+      ['Segunda ideia da Ana', 1],
+      ['Primeira ideia da Ana', 1],
+    ]);
+
+    // Autores e comentários levam o id para o link do perfil.
+    const [card] = await bia.rpc<Row>('list_suggestions', { p_project_id: projectId, p_search: 'Primeira' });
+    expect(card.author_id).toBe(ana.id);
+    await bia.rpc('create_comment', { p_suggestion_id: a1, p_content: 'Boa!' });
+    const [comment] = await ana.rpc<Row>('list_comments', { p_suggestion_id: a1 });
+    expect(comment.author_id).toBe(bia.id);
+
+    const [{ get_public_profile: mine }] = await bia.rpc<{ get_public_profile: Row }>('get_public_profile', { p_user_id: bia.id });
+    expect(mine).toMatchObject({ is_me: true, rank_position: null, score: 0, suggestion_count: 0 });
+  });
+
+  it('conta desativada ou inexistente não tem perfil público', async () => {
+    const ana = await t.createUser('Ana');
+    const bia = await t.createUser('Bia');
+    await admin.rpc('admin_update_user', { p_user_id: ana.id, p_role: 'user', p_status: 'disabled' });
+    expect((await errorOf(bia.rpc('get_public_profile', { p_user_id: ana.id }))).code).toBe('HV404');
+    expect((await errorOf(bia.rpc('list_user_suggestions', { p_user_id: ana.id }))).code).toBe('HV404');
+    expect((await errorOf(bia.rpc('get_public_profile', { p_user_id: '00000000-0000-0000-0000-000000000000' }))).code).toBe('HV404');
+  });
+});
+
+describe('Busca', () => {
+  it('encontra em todos os projetos exigindo todas as palavras, ignorando maiúsculas e excluídas', async () => {
+    const ana = await t.createUser('Ana');
+    const [row] = await admin.rpc<{ create_project: string }>('create_project', {
+      p_name: 'Portal de Chamados',
+      p_description: 'Atendimento interno da Hubvision.',
+      p_category: 'Atendimento',
+      p_status: 'em_desenvolvimento',
+    });
+    const outro = row.create_project;
+    const a = await suggest(ana, 'Exportar relatório em PDF');
+    const [{ create_suggestion: b }] = await ana.rpc<{ create_suggestion: string }>('create_suggestion', {
+      p_project_id: outro,
+      p_type: 'melhoria',
+      p_title: 'Notificar por e-mail',
+      p_description: 'Enviar o relatório do chamado por e-mail ao solicitante.',
+    });
+    const gone = await suggest(ana, 'Relatório antigo removido');
+    await ana.rpc('delete_suggestion', { p_id: gone });
+
+    const search = async (args: Record<string, unknown>) => (await ana.rpc<Row>('search_suggestions', args)).map((s) => s.id);
+    // Título vem antes de descrição; a excluída nunca aparece.
+    expect(await search({ p_search: 'RELATÓRIO' })).toEqual([a, b]);
+    expect(await search({ p_search: 'relatório e-mail' })).toEqual([b]);
+    expect(await search({ p_search: 'relatório', p_project_id: outro })).toEqual([b]);
+    expect(await search({ p_search: 'pdf planilha', p_match_any: true })).toEqual([a]);
+    expect(await search({ p_search: 'de a' })).toEqual([]);
+    const [first] = await ana.rpc<Row>('search_suggestions', { p_search: 'relatório' });
+    expect(first).toMatchObject({ project_name: 'Templates de consultas SQL', author_name: 'Ana' });
+    expect((await errorOf(t.anon.rpc('search_suggestions', { p_search: 'pdf' }))).code).toBe('42501');
+  });
+});
+
+describe('Privacidade (LGPD)', () => {
+  it('exporta os próprios dados, incluindo e-mail, e só os de quem pede', async () => {
+    const ana = await t.createUser('Ana', { email: 'ana@exemplo.test' });
+    const bia = await t.createUser('Bia');
+    const id = await suggest(ana, 'Ideia exportada');
+    await vote(bia, id);
+    await bia.rpc('create_comment', { p_suggestion_id: id, p_content: 'Comentário da Bia' });
+
+    const [{ export_my_data: data }] = await ana.rpc<{ export_my_data: Row }>('export_my_data');
+    const d = data as { profile: Row; suggestions: Row[]; comments: Row[]; votes_given: Row[]; notifications: Row[] };
+    expect(d.profile).toMatchObject({ name: 'Ana', email: 'ana@exemplo.test' });
+    expect(d.suggestions.map((s) => [s.title, s.votes_received])).toEqual([['Ideia exportada', 1]]);
+    expect(d.comments).toEqual([]);
+    expect(d.notifications.length).toBe(2);
+    const [{ export_my_data: other }] = await bia.rpc<{ export_my_data: Row }>('export_my_data');
+    expect((other as { votes_given: Row[] }).votes_given.map((v) => v.suggestion)).toEqual(['Ideia exportada']);
+    expect((await errorOf(t.anon.rpc('export_my_data'))).code).toBe('42501');
+  });
+
+  it('excluir a conta apaga login, votos e foto, anonimiza o perfil e mantém as sugestões', async () => {
+    const ana = await t.createUser('Ana', { email: 'ana@exemplo.test' });
+    const bia = await t.createUser('Bia');
+    const sa = await suggest(ana, 'Ideia que fica');
+    const sb = await suggest(bia, 'Ideia da Bia');
+    await vote(bia, sa);
+    await vote(ana, sb);
+    await ana.rpc('create_comment', { p_suggestion_id: sb, p_content: 'Comentário que some' });
+    const path = `${ana.id}/foto.webp`;
+    await ana.sql(`insert into storage.objects (bucket_id, name, owner) values ('avatars', $1, $2)`, [path, ana.id]);
+    await ana.rpc('set_my_avatar', { p_path: path });
+
+    const [{ delete_my_account: old }] = await ana.rpc<{ delete_my_account: string }>('delete_my_account');
+    expect(old).toBe(path);
+    // O token ainda vale alguns minutos: dá para apagar a própria foto logo depois.
+    expect(await ana.sql(`delete from storage.objects where name = $1 returning name`, [path])).toHaveLength(1);
+
+    expect(await t.raw(`select 1 from auth.users where id = $1`, [ana.id])).toEqual([]);
+    expect(await t.raw(`select 1 from public.votes where user_id = $1`, [ana.id])).toEqual([]);
+    const [profile] = await t.raw<Row>(`select name, status, avatar_path, deleted_at from public.profiles where id = $1`, [ana.id]);
+    expect(profile).toMatchObject({ name: 'Participante removido', status: 'disabled', avatar_path: null });
+    expect(profile.deleted_at).not.toBeNull();
+
+    const [kept] = await bia.rpc<Row>('get_suggestion', { p_id: sa });
+    expect(kept.author_name).toBe('Participante removido');
+    const [comment] = await bia.rpc<Row>('list_comments', { p_suggestion_id: sb });
+    expect([comment.is_deleted, comment.content, comment.author_name]).toEqual([true, null, null]);
+    expect((await bia.rpc<Row>('get_ranking')).map((r) => r.user_name)).toEqual(['Bia']);
+    expect((await errorOf(bia.rpc('get_public_profile', { p_user_id: ana.id }))).code).toBe('HV404');
+    expect(Number((await bia.rpc<Row>('get_suggestion', { p_id: sb }))[0].vote_count)).toBe(0);
+  });
+
+  it('o único administrador não exclui a própria conta', async () => {
+    expect((await errorOf(admin.rpc('delete_my_account'))).code).toBe('HV409');
+    const outro = await t.createUser('Outro admin');
+    await admin.rpc('admin_update_user', { p_user_id: outro.id, p_role: 'admin', p_status: 'active' });
+    await admin.rpc('delete_my_account');
+    expect(await t.raw(`select 1 from auth.users where id = $1`, [admin.id])).toEqual([]);
+  });
+
+  it('fotos só podem ser lidas por contas ativas', async () => {
+    const ana = await t.createUser('Ana');
+    const bia = await t.createUser('Bia');
+    await ana.sql(`insert into storage.objects (bucket_id, name, owner) values ('avatars', $1, $2)`, [`${ana.id}/a.webp`, ana.id]);
+    const [bucket] = await t.raw<Row>(`select public from storage.buckets where id = 'avatars'`);
+    expect(bucket.public).toBe(false);
+    expect(await bia.sql(`select name from storage.objects where bucket_id = 'avatars'`)).toHaveLength(1);
+    expect((await errorOf(t.anon.sql(`select name from storage.objects`))).code).toBe('42501');
+    await admin.rpc('admin_update_user', { p_user_id: bia.id, p_role: 'user', p_status: 'disabled' });
+    expect(await bia.sql(`select name from storage.objects where bucket_id = 'avatars'`)).toEqual([]);
   });
 });

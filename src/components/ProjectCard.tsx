@@ -136,7 +136,7 @@ export function DeleteProjectDialog({
       }
       onConfirm={async () => {
         await api.deleteProject(projectId, suggestionCount > 0);
-        for (const key of [qk.projects, qk.stats, qk.ranking, qk.myScore, qk.auditLog, qk.adminSuggestions]) {
+        for (const key of [qk.projects, qk.stats, qk.ranking, qk.myScore, qk.auditLog, qk.adminSuggestions, qk.publicProfiles, qk.userSuggestionLists]) {
           queryClient.invalidateQueries({ queryKey: key });
         }
         queryClient.removeQueries({ queryKey: qk.project(projectId) });

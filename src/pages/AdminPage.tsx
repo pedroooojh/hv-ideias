@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lightbulb, MessageSquare, RefreshCcw, ScrollText, ThumbsUp, Users } from 'lucide-react';
+import { ImageOff, Lightbulb, MessageSquare, RefreshCcw, ScrollText, ThumbsUp, Users } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { api, qk, type AdminSuggestion, type AdminUser, type AuditEntry } from '@/lib/api';
 import {
@@ -19,7 +19,7 @@ import { ConfirmDialog } from '@/components/Modal';
 import { Dot, Select } from '@/components/Select';
 import { StatusDialog } from '@/components/StatusDialog';
 import { useToast } from '@/components/Toast';
-import { EmptyState, ErrorState, LoadMore, PageContainer, Skeleton, SuggestionStatusChip, TypeChip } from '@/components/ui';
+import { Avatar, EmptyState, ErrorState, LoadMore, PageContainer, Skeleton, SuggestionStatusChip, TypeChip, toneFor } from '@/components/ui';
 
 const TABS = [
   { id: 'sugestoes', label: 'Sugestões', icon: Lightbulb },
@@ -288,6 +288,7 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
   const queryClient = useQueryClient();
   const toast = useToast();
   const [pending, setPending] = useState<{ role: AdminUser['role']; status: AdminUser['status'] } | null>(null);
+  const [removingPhoto, setRemovingPhoto] = useState(false);
 
   const describe = (next: { role: AdminUser['role']; status: AdminUser['status'] }) => {
     if (next.status !== user.status) {
@@ -302,16 +303,19 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
 
   return (
     <li className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-      <div className="min-w-0">
-        <p className="font-semibold text-ink">
-          {user.name} {isSelf && <span className="chip ml-1 bg-brand-soft py-0.5 text-[0.6875rem] text-brand">você</span>}
-        </p>
-        <p className="truncate text-sm text-muted">{user.email}</p>
-        <p className="text-xs text-muted">
-          Desde {formatDate(user.created_at)} · {user.suggestion_count} sugestão(ões)
-        </p>
+      <div className="flex min-w-0 items-center gap-3">
+        <Avatar name={user.name} photo={user.avatar_path} size="md" tone={toneFor(user.name)} />
+        <div className="min-w-0">
+          <p className="font-semibold text-ink">
+            {user.name} {isSelf && <span className="chip ml-1 bg-brand-soft py-0.5 text-[0.6875rem] text-brand">você</span>}
+          </p>
+          <p className="truncate text-sm text-muted">{user.email}</p>
+          <p className="text-xs text-muted">
+            Desde {formatDate(user.created_at)} · {user.suggestion_count} sugestão(ões)
+          </p>
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap sm:justify-end">
         <Select
           compact
           className="w-auto min-w-[11rem]"
@@ -333,8 +337,27 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
         >
           {user.status === 'active' ? 'Desativar' : 'Reativar'}
         </button>
+        {user.avatar_path && (
+          <button type="button" className="btn-ghost py-2" onClick={() => setRemovingPhoto(true)} title="Remover a foto de perfil">
+            <ImageOff className="h-4 w-4" aria-hidden /> Remover foto
+          </button>
+        )}
         {user.status === 'disabled' && <span className="chip bg-danger/10 text-danger">Desativada</span>}
       </div>
+      <ConfirmDialog
+        open={removingPhoto}
+        onOpenChange={setRemovingPhoto}
+        title="Remover foto de perfil"
+        description={`A foto de ${user.name} será apagada e as iniciais aparecerão no lugar. A pessoa pode enviar outra depois. A remoção fica registrada na auditoria.`}
+        confirmLabel="Remover foto"
+        onConfirm={async () => {
+          await api.adminRemoveAvatar(user.id);
+          for (const key of ['admin-users', 'audit-log', 'ranking', 'suggestions', 'suggestion', 'comments', 'profile']) {
+            queryClient.invalidateQueries({ queryKey: [key] });
+          }
+          toast.success('Foto removida.');
+        }}
+      />
       <ConfirmDialog
         open={pending !== null}
         onOpenChange={(open) => !open && setPending(null)}
@@ -348,6 +371,7 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
           queryClient.invalidateQueries({ queryKey: qk.adminUsers });
           queryClient.invalidateQueries({ queryKey: qk.auditLog });
           queryClient.invalidateQueries({ queryKey: qk.ranking });
+          queryClient.invalidateQueries({ queryKey: qk.publicProfiles });
           toast.success('Conta atualizada.');
         }}
       />
@@ -371,6 +395,8 @@ const ACTION_LABEL: Record<string, string> = {
   'suggestion.status_change': 'alterou o status da sugestão',
   'comment.moderate': 'removeu um comentário em',
   'user.update': 'alterou a conta de',
+  'user.avatar_remove': 'removeu a foto de perfil de',
+  'user.self_delete': 'excluiu a própria conta',
 };
 
 function statusLabel(value: unknown): string {

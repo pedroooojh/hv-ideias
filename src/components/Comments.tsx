@@ -10,6 +10,7 @@ import { formatDateTime, plural } from '@/lib/format';
 import { ConfirmDialog } from './Modal';
 import { RichText } from './RichText';
 import { useToast } from './Toast';
+import { PersonLink } from './PersonLink';
 import { Avatar, CharCounter, ErrorState, LoadMore, Skeleton, toneFor } from './ui';
 
 interface Props {
@@ -185,10 +186,14 @@ function CommentRow({ comment: c, suggestionId, projectId }: { comment: CommentI
 
   return (
     <li className="flex gap-3">
-      <Avatar name={c.author_name} size="md" tone={toneFor(c.author_name)} />
+      <PersonLink id={c.author_id} className="shrink-0 self-start rounded-full">
+        <Avatar name={c.author_name} photo={c.author_avatar} size="md" tone={toneFor(c.author_name)} />
+      </PersonLink>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 text-sm">
-          <span className="font-semibold text-ink">{c.author_name}</span>
+          <PersonLink id={c.author_id} className="font-semibold text-ink">
+            {c.author_name}
+          </PersonLink>
           {c.is_author && <span className="chip bg-brand-soft py-0.5 text-[11px] text-brand">você</span>}
           <time dateTime={c.created_at} className="text-muted">
             {formatDateTime(c.created_at)}

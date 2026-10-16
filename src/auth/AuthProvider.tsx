@@ -3,6 +3,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { useIsRestoring, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { api, qk, type Profile } from '@/lib/api';
+import { clearAvatarUrls } from '@/lib/avatarUrls';
 import { getCacheOwner, setCacheOwner } from '@/lib/queryCache';
 
 interface AuthContextValue {
@@ -86,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut: async () => {
         await supabase.auth.signOut();
         queryClient.clear();
+        clearAvatarUrls();
         setCacheOwner(null);
       },
     };

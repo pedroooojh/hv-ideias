@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { PersonLink } from './PersonLink';
 import { ArrowRight, MessageSquare } from 'lucide-react';
 import type { SuggestionListItem } from '@/lib/api';
 import { formatDate, plural } from '@/lib/format';
@@ -60,11 +61,11 @@ export function SuggestionCard({ suggestion: s }: { suggestion: SuggestionListIt
               <MessageSquare className="h-4 w-4" aria-hidden />
               {plural(s.comment_count, 'comentário', 'comentários')}
             </span>
-            <span className="inline-flex items-center gap-2">
-              <Avatar name={s.author_name} tone={toneFor(s.author_name)} />
+            <PersonLink id={s.author_id} className="inline-flex items-center gap-2">
+              <Avatar name={s.author_name} photo={s.author_avatar} tone={toneFor(s.author_name)} />
               <span className="text-ink/80">{s.author_name}</span>
               {s.is_author && <span className="chip bg-brand-soft py-0.5 text-[0.6875rem] text-brand">você</span>}
-            </span>
+            </PersonLink>
           </div>
         </div>
       </div>
