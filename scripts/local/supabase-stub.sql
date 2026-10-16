@@ -9,7 +9,10 @@ create table auth.users (
   id uuid primary key,
   email text unique,
   raw_user_meta_data jsonb default '{}'::jsonb,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  -- Colunas do Supabase usadas pelas migrações (convites).
+  invited_at timestamptz,
+  email_confirmed_at timestamptz
 );
 create function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claims', true)::jsonb ->> 'sub', '')::uuid

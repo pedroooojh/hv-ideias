@@ -26,6 +26,7 @@ const KIND_BY_CODE: Record<string, ApiErrorKind> = {
   HV409: 'conflict',
   HV422: 'validation',
   HV429: 'rate_limited',
+  HV502: 'unknown',
 };
 
 interface RawError {

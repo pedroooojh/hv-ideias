@@ -1067,3 +1067,47 @@ describe('Privacidade (LGPD)', () => {
     expect(await bia.sql(`select name from storage.objects where bucket_id = 'avatars'`)).toEqual([]);
   });
 });
+
+describe('Convites', () => {
+  it('só administrador prepara convites, com e-mail válido e sem conta ativa', async () => {
+    const ana = await t.createUser('Ana', { email: 'ana@exemplo.test' });
+    expect((await errorOf(ana.rpc('admin_prepare_invite', { p_email: 'novo@exemplo.test' }))).code).toBe('HV403');
+    for (const bad of ['', 'sem-arroba', 'a@b', 'com espaco@x.test']) {
+      expect((await errorOf(admin.rpc('admin_prepare_invite', { p_email: bad }))).code, bad).toBe('HV422');
+    }
+    expect((await errorOf(admin.rpc('admin_prepare_invite', { p_email: ' ANA@exemplo.test ' }))).code).toBe('HV409');
+    const [{ admin_prepare_invite: email }] = await admin.rpc<{ admin_prepare_invite: string }>('admin_prepare_invite', {
+      p_email: '  Novo@Exemplo.test ',
+    });
+    expect(email).toBe('novo@exemplo.test');
+  });
+
+  it('convite pendente pode ser reenviado, aparece na lista e fica na auditoria', async () => {
+    // O que a Edge Function faz com a chave de administrador: cria o usuário convidado.
+    const id = '11111111-1111-4111-8111-111111111111';
+    await t.raw(
+      `insert into auth.users (id, email, raw_user_meta_data, invited_at) values ($1, 'convidado@exemplo.test', '{"name":"Convidado Novo"}', now())`,
+      [id],
+    );
+    const [{ admin_prepare_invite: again }] = await admin.rpc<{ admin_prepare_invite: string }>('admin_prepare_invite', {
+      p_email: 'convidado@exemplo.test',
+    });
+    expect(again).toBe('convidado@exemplo.test');
+
+    const [{ admin_record_invite: recorded }] = await admin.rpc<{ admin_record_invite: string }>('admin_record_invite', {
+      p_email: 'convidado@exemplo.test',
+    });
+    expect(recorded).toBe(id);
+    const [entry] = await admin.rpc<Row>('admin_list_audit_log', { p_entity_type: 'user' });
+    expect([entry.action, (entry.new_value as Row).name]).toEqual(['user.invite', 'Convidado Novo']);
+
+    const users = await admin.rpc<Row>('admin_list_users', { p_search: 'convidado' });
+    expect(users.map((u) => [u.name, u.invite_pending])).toEqual([['Convidado Novo', true]]);
+
+    // Depois de aceitar, o convite deixa de estar pendente e não pode ser reenviado.
+    await t.raw(`update auth.users set email_confirmed_at = now() where id = $1`, [id]);
+    expect((await admin.rpc<Row>('admin_list_users', { p_search: 'convidado' }))[0].invite_pending).toBe(false);
+    expect((await errorOf(admin.rpc('admin_prepare_invite', { p_email: 'convidado@exemplo.test' }))).code).toBe('HV409');
+    expect((await errorOf(admin.rpc('admin_record_invite', { p_email: 'ninguem@exemplo.test' }))).code).toBe('HV404');
+  });
+});

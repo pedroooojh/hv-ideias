@@ -240,6 +240,8 @@ export interface AdminUser {
   created_at: string;
   suggestion_count: number;
   avatar_path: string | null;
+  /** Convidado que ainda não aceitou (não criou a senha). */
+  invite_pending: boolean;
   total_count: number;
 }
 
@@ -539,6 +541,29 @@ export const api = {
     rpc<Record<string, number>>('admin_user_status_counts', { p_search: filters.search || null, p_role: filters.role }),
   adminUpdateUser: (userId: string, role: AdminUser['role'], status: AdminUser['status']) =>
     rpc<void>('admin_update_user', { p_user_id: userId, p_role: role, p_status: status }),
+  /**
+   * Convite por e-mail. Passa pela Edge Function `admin-invite` (precisa da chave de
+   * administrador do Supabase); as regras ficam no banco (admin_prepare_invite).
+   * Também serve para reenviar um convite pendente.
+   */
+  adminInviteUser: async (email: string, name?: string) => {
+    let result;
+    try {
+      result = await supabase.functions.invoke<{ email: string; user_id: string | null }>('admin-invite', {
+        body: { email, name: name || undefined },
+      });
+    } catch (err) {
+      throw toApiError(err);
+    }
+    if (result.error) {
+      // Erro HTTP da função: o corpo traz { code: 'HVxxx', message } como as RPCs.
+      const context = (result.error as { context?: Response }).context;
+      const payload = context && typeof context.json === 'function' ? await context.json().catch(() => null) : null;
+      if (payload?.code) throw toApiError(payload);
+      throw new ApiError('Não foi possível enviar o convite. Verifique sua conexão e tente novamente.', 'network');
+    }
+    return result.data!;
+  },
   /** Moderação: tira a foto do perfil (com auditoria) e apaga o arquivo. */
   adminRemoveAvatar: async (userId: string) => {
     const old = await rpc<string | null>('admin_remove_avatar', { p_user_id: userId });

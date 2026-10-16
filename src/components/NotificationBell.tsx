@@ -108,7 +108,7 @@ export function NotificationBell({ className, onOpenRanking }: { className: stri
           align="end"
           sideOffset={8}
           collisionPadding={12}
-          className="animate-presence z-50 flex max-h-[min(32rem,80vh)] w-[min(24rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-float"
+          className="animate-presence z-50 flex max-h-[min(32rem,80vh)] w-[min(24rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-float focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
         >
           <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
             <Menu.Label className="font-display text-sm font-bold text-ink">Notificações</Menu.Label>

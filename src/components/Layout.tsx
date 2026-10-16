@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Search, Trophy, UserRound } from 'lucide-react';
+import { Search, ShieldCheck, Trophy } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { api, qk } from '@/lib/api';
 import { isRankingClosingDay, rankingDayKey } from '@/lib/format';
@@ -9,7 +9,7 @@ import { NotificationBell } from './NotificationBell';
 import { RankingDialog } from './RankingDialog';
 import { SearchDialog, useSearchShortcut } from './SearchDialog';
 import { ThemeToggle } from './ThemeToggle';
-import { Avatar, toneFor } from './ui';
+import { UserMenu } from './UserMenu';
 
 const iconButton =
   'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-line bg-subtle/70 text-ink transition-colors duration-200 hover:bg-subtle hover:text-brand min-[360px]:h-9 min-[360px]:w-9 sm:h-11 sm:w-11';
@@ -32,7 +32,7 @@ function Header({
   onOpenRanking: () => void;
   onOpenSearch: () => void;
 }) {
-  const { profile } = useAuth();
+  const { isAdmin } = useAuth();
   const { pathname } = useLocation();
   const rankingActive = rankingOpen || pathname === '/ranking';
   const ref = useRef<HTMLElement>(null);
@@ -76,23 +76,30 @@ function Header({
           <Logo />
         </Link>
         <nav className="flex items-center gap-1 min-[360px]:gap-1.5 sm:gap-3" aria-label="Navegação principal">
-          <button type="button" className={iconButton} onClick={onOpenSearch} aria-label="Buscar sugestões (Ctrl+K)" title="Buscar (Ctrl+K)">
+          {/* Em telas muito estreitas a busca fica só no menu da conta. */}
+          <button
+            type="button"
+            className={`${iconButton} hidden min-[340px]:inline-flex`}
+            onClick={onOpenSearch}
+            aria-label="Buscar sugestões (Ctrl+K)"
+            title="Buscar (Ctrl+K)"
+          >
             <Search className="h-5 w-5" />
           </button>
           <ThemeToggle className={`${iconButton} hidden sm:inline-flex`} />
           <NotificationBell className={iconButton} onOpenRanking={onOpenRanking} />
-          <NavLink
-            to="/perfil"
-            className={iconButton}
-            aria-label={`Meu perfil (${profile?.name ?? 'conta'})`}
-            title="Meu perfil"
-          >
-            {profile?.avatar_path ? (
-              <Avatar name={profile.name} photo={profile.avatar_path} tone={toneFor(profile.name)} />
-            ) : (
-              <UserRound className="h-5 w-5" />
-            )}
-          </NavLink>
+          {isAdmin && (
+            // Atalho direto para a gestão em telas largas; no celular ela fica no menu da conta.
+            <NavLink
+              to="/admin"
+              className={({ isActive }) => `${iconButton} hidden md:inline-flex ${isActive ? 'border-brand text-brand' : ''}`}
+              aria-label="Gestão da plataforma"
+              title="Gestão da plataforma"
+            >
+              <ShieldCheck className="h-5 w-5" />
+            </NavLink>
+          )}
+          <UserMenu className={iconButton} onOpenSearch={onOpenSearch} />
           <button
             type="button"
             onClick={onOpenRanking}

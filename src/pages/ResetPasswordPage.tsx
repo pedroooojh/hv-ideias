@@ -10,13 +10,13 @@ import { usePageTitle } from '@/lib/navigation';
 
 /** Destino do link de recuperação enviado por e-mail: o Supabase abre uma sessão temporária. */
 export function ResetPasswordPage() {
-  usePageTitle('Redefinir senha');
+  // Convite: a pessoa ainda não tem senha; o texto muda de "nova senha" para "crie sua senha".
+  const invited = useSearchParams()[0].has('convite');
+  usePageTitle(invited ? 'Crie sua senha' : 'Redefinir senha');
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
   const id = useId();
-  // Convite: a pessoa ainda não tem senha; o texto muda de "nova senha" para "crie sua senha".
-  const invited = useSearchParams()[0].has('convite');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [errors, setErrors] = useState<{ password?: string; confirm?: string }>({});
@@ -60,7 +60,7 @@ export function ResetPasswordPage() {
       setFormError('Não foi possível alterar a senha. Solicite um novo link e tente novamente.');
       return;
     }
-    toast.success('Senha alterada com sucesso.');
+    toast.success(invited ? 'Senha criada. Boas-vindas ao Hubvision Ideias!' : 'Senha alterada com sucesso.');
     navigate('/', { replace: true });
   };
 

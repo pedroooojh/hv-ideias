@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ImageOff, Lightbulb, MessageSquare, RefreshCcw, ScrollText, ThumbsUp, Users } from 'lucide-react';
+import { ImageOff, Lightbulb, MailPlus, MessageSquare, RefreshCcw, ScrollText, Send, ThumbsUp, Users } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { api, qk, type AdminSuggestion, type AdminUser, type AuditEntry } from '@/lib/api';
 import {
@@ -12,9 +12,11 @@ import {
   type ProjectStatus,
   type SuggestionStatus,
 } from '@/lib/domain';
+import { errorMessage } from '@/lib/errors';
 import { formatDate, formatDateTime, formatNumber } from '@/lib/format';
 import { usePageTitle } from '@/lib/navigation';
 import { FilterBar, FilterMenu, FilterSummary, SearchField, pick, useUrlFilters } from '@/components/Filters';
+import { InviteDialog } from '@/components/InviteDialog';
 import { ConfirmDialog } from '@/components/Modal';
 import { Dot, Select } from '@/components/Select';
 import { StatusDialog } from '@/components/StatusDialog';
@@ -233,10 +235,14 @@ function UsersPanel({ controlsSlot }: { controlsSlot: HTMLElement | null }) {
   });
   const users = query.data?.pages.flatMap((p) => p.items) ?? [];
   const count = (k: string) => (counts.data ? Number(counts.data[k] ?? 0) : undefined);
+  const [inviting, setInviting] = useState(false);
 
   return (
     <>
       <PanelControls slot={controlsSlot}>
+        <button type="button" className="btn-primary py-2" onClick={() => setInviting(true)}>
+          <MailPlus className="h-4 w-4" aria-hidden /> Convidar pessoa
+        </button>
         <SearchField
           label="Buscar usuários por nome ou e-mail"
           placeholder="Buscar usuários"
@@ -280,6 +286,7 @@ function UsersPanel({ controlsSlot }: { controlsSlot: HTMLElement | null }) {
         )}
         <LoadMore hasMore={query.hasNextPage} loading={query.isFetchingNextPage} onClick={() => query.fetchNextPage()} />
       </div>
+      <InviteDialog open={inviting} onOpenChange={setInviting} />
     </>
   );
 }
@@ -289,6 +296,20 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
   const toast = useToast();
   const [pending, setPending] = useState<{ role: AdminUser['role']; status: AdminUser['status'] } | null>(null);
   const [removingPhoto, setRemovingPhoto] = useState(false);
+  const [resending, setResending] = useState(false);
+
+  const resendInvite = async () => {
+    setResending(true);
+    try {
+      await api.adminInviteUser(user.email);
+      queryClient.invalidateQueries({ queryKey: qk.auditLog });
+      toast.success(`Convite reenviado para ${user.email}.`);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setResending(false);
+    }
+  };
 
   const describe = (next: { role: AdminUser['role']; status: AdminUser['status'] }) => {
     if (next.status !== user.status) {
@@ -341,6 +362,16 @@ function UserRow({ user, isSelf }: { user: AdminUser; isSelf: boolean }) {
           <button type="button" className="btn-ghost py-2" onClick={() => setRemovingPhoto(true)} title="Remover a foto de perfil">
             <ImageOff className="h-4 w-4" aria-hidden /> Remover foto
           </button>
+        )}
+        {user.invite_pending && (
+          <>
+            <span className="chip bg-warning/10 text-warning" title="A pessoa ainda não abriu o convite nem criou a senha">
+              Convite pendente
+            </span>
+            <button type="button" className="btn-ghost py-2" onClick={resendInvite} disabled={resending}>
+              <Send className="h-4 w-4" aria-hidden /> {resending ? 'Reenviando…' : 'Reenviar convite'}
+            </button>
+          </>
         )}
         {user.status === 'disabled' && <span className="chip bg-danger/10 text-danger">Desativada</span>}
       </div>
@@ -397,6 +428,7 @@ const ACTION_LABEL: Record<string, string> = {
   'user.update': 'alterou a conta de',
   'user.avatar_remove': 'removeu a foto de perfil de',
   'user.self_delete': 'excluiu a própria conta',
+  'user.invite': 'convidou',
 };
 
 function statusLabel(value: unknown): string {

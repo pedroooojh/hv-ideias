@@ -6,7 +6,8 @@
 // expõe o subconjunto da API do Supabase que o frontend usa:
 //   * /auth/v1  — cadastro, login, refresh, usuário atual, logout (e-mail/senha)
 //   * /rest/v1/rpc/<função> — chamadas RPC com os papéis anon/authenticated
-//   * /storage/v1/object — envio, remoção e leitura pública de arquivos (fotos de perfil)
+//   * /storage/v1/object — envio, remoção e links assinados de arquivos (fotos de perfil)
+//   * /functions/v1/admin-invite — convite pela Gestão (o link sai no console)
 //
 // Serve para validar a aplicação sem Docker e sem um projeto Supabase. Não é um
 // substituto do Supabase em produção: não envia e-mails, não tem OAuth, não tem
@@ -73,6 +74,17 @@ async function bootstrap() {
   }
   // Storage mínimo (idempotente, também para bancos criados antes dele) e os bytes dos arquivos.
   await db.exec(readFileSync(join(ROOT, 'scripts', 'local', 'storage-stub.sql'), 'utf8'));
+  // Colunas de convite do Supabase (bancos locais antigos não têm) e tokens dos links de e-mail.
+  await db.exec(`
+    alter table auth.users add column if not exists invited_at timestamptz;
+    alter table auth.users add column if not exists email_confirmed_at timestamptz;
+    create table if not exists emulator.otp_tokens (
+      token_hash text primary key,
+      user_id uuid not null references auth.users (id) on delete cascade,
+      type text not null,
+      expires_at timestamptz not null
+    );
+  `);
   await db.exec(`
     create table if not exists emulator.storage_blobs (
       bucket_id text not null,
@@ -256,12 +268,29 @@ async function handleAuth(method, path, query, body, claims) {
       }
       if (body.password !== undefined) {
         if (String(body.password).length < MIN_PASSWORD) return authError(422, 'weak_password', `Password should be at least ${MIN_PASSWORD} characters.`);
-        await db.query(`update emulator.credentials set password_hash = $2 where user_id = $1`, [claims.sub, hashPassword(String(body.password))]);
+        // Upsert: quem entrou por convite ainda não tem senha.
+        await db.query(
+          `insert into emulator.credentials (user_id, password_hash) values ($1, $2)
+           on conflict (user_id) do update set password_hash = excluded.password_hash`,
+          [claims.sub, hashPassword(String(body.password))],
+        );
       }
     }
     const user = (await db.query(`select * from auth.users where id = $1`, [claims.sub])).rows[0];
     if (!user) return authError(404, 'user_not_found', 'User not found');
     return { status: 200, body: userJson(user) };
+  }
+
+  // Link de e-mail (convite etc.): valida o token de uso único e abre a sessão.
+  if (method === 'POST' && path === '/verify') {
+    const { rows } = await db.query(
+      `delete from emulator.otp_tokens where token_hash = $1 and type = $2 and expires_at > now() returning user_id`,
+      [String(body.token_hash ?? ''), String(body.type ?? '')],
+    );
+    if (!rows[0]) return authError(403, 'otp_expired', 'Email link is invalid or has expired');
+    await db.query(`update auth.users set email_confirmed_at = coalesce(email_confirmed_at, now()) where id = $1`, [rows[0].user_id]);
+    const user = (await db.query(`select * from auth.users where id = $1`, [rows[0].user_id])).rows[0];
+    return { status: 200, body: await issueSession(user) };
   }
 
   if (method === 'POST' && path === '/logout') {
@@ -392,6 +421,48 @@ async function handleStorage(method, path, query, headers, raw, claims) {
 }
 
 // ---------------------------------------------------------------------------
+// Edge Functions (equivalente local de supabase/functions)
+// ---------------------------------------------------------------------------
+
+const RPC_STATUS = { HV401: 401, HV403: 403, HV404: 404, HV409: 409, HV422: 422, HV429: 429 };
+
+/** admin-invite: mesmas regras da função real (no banco); o "e-mail" vira um link no console. */
+async function handleFunction(name, body, claims) {
+  if (name !== 'admin-invite') return { status: 404, body: { message: `Função ${name} não existe no emulador.` } };
+  if (!claims) return { status: 401, body: { code: 'HV401', message: 'Faça login para continuar.' } };
+
+  const prepared = await handleRpc('admin_prepare_invite', { p_email: body.email ?? null }, claims);
+  if (prepared.status !== 200) {
+    return { status: RPC_STATUS[prepared.body?.code] ?? prepared.status, body: prepared.body };
+  }
+  const email = prepared.body;
+  const displayName = typeof body.name === 'string' ? body.name.trim().slice(0, 80) : '';
+  let user = await findUserByEmail(email);
+  if (!user) {
+    const id = randomUUID();
+    await db.query(`insert into auth.users (id, email, raw_user_meta_data, invited_at) values ($1, $2, $3, now())`, [
+      id,
+      email,
+      JSON.stringify(displayName.length >= 2 ? { name: displayName } : {}),
+    ]);
+    user = (await db.query(`select * from auth.users where id = $1`, [id])).rows[0];
+  } else {
+    await db.query(`update auth.users set invited_at = now() where id = $1`, [user.id]);
+  }
+
+  const token = randomBytes(24).toString('hex');
+  await db.query(`insert into emulator.otp_tokens (token_hash, user_id, type, expires_at) values ($1, $2, 'invite', now() + interval '24 hours')`, [
+    token,
+    user.id,
+  ]);
+  const link = `http://localhost:5173/auth/confirm?token_hash=${token}&type=invite&next=${encodeURIComponent('/redefinir-senha?convite=1')}`;
+  console.log(`[emulador] convite para ${email} (o emulador não envia e-mails). Link: ${link}`);
+
+  const recorded = await handleRpc('admin_record_invite', { p_email: email }, claims);
+  return { status: 200, body: { email, user_id: recorded.status === 200 ? recorded.body : null } };
+}
+
+// ---------------------------------------------------------------------------
 // RPC (equivalente ao PostgREST para POST /rest/v1/rpc/<fn>)
 // ---------------------------------------------------------------------------
 
@@ -484,10 +555,12 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname.startsWith('/auth/v1')) {
         return handleAuth(req.method, url.pathname.slice('/auth/v1'.length), url.searchParams, body, claims);
       }
+      const fn = url.pathname.match(/^\/functions\/v1\/([a-z-]+)$/);
+      if (fn && req.method === 'POST') return handleFunction(fn[1], body, claims);
       if (isStorage) return handleStorage(req.method, url.pathname.slice('/storage/v1'.length), url.searchParams, req.headers, raw, claims);
       const rpc = url.pathname.match(/^\/rest\/v1\/rpc\/([^/]+)$/);
       if (rpc && req.method === 'POST') return handleRpc(rpc[1], body, claims);
-      return { status: 404, body: { message: 'Rota não suportada pelo emulador (apenas /auth/v1, /rest/v1/rpc e /storage/v1).' } };
+      return { status: 404, body: { message: 'Rota não suportada pelo emulador (apenas /auth/v1, /rest/v1/rpc, /storage/v1 e /functions/v1).' } };
     });
     if (process.env.EMULATOR_LOG) console.log(`${req.method} ${url.pathname} → ${result.status}`);
     if (result.raw) {
