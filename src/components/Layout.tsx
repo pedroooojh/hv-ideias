@@ -4,9 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Search, ShieldCheck, Trophy } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { api, qk } from '@/lib/api';
-import { isRankingClosingDay, rankingDayKey } from '@/lib/format';
+import { isMonthOpeningDay, isRankingClosingDay, rankingDayKey } from '@/lib/format';
 import { NotificationBell } from './NotificationBell';
-import { RankingDialog } from './RankingDialog';
+import { RankingDialog, type RankingView } from './RankingDialog';
 import { SearchDialog, useSearchShortcut } from './SearchDialog';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
@@ -29,7 +29,7 @@ function Header({
   onOpenSearch,
 }: {
   rankingOpen: boolean;
-  onOpenRanking: () => void;
+  onOpenRanking: (view?: RankingView) => void;
   onOpenSearch: () => void;
 }) {
   const { isAdmin } = useAuth();
@@ -102,7 +102,7 @@ function Header({
           <UserMenu className={iconButton} onOpenSearch={onOpenSearch} />
           <button
             type="button"
-            onClick={onOpenRanking}
+            onClick={() => onOpenRanking()}
             aria-haspopup="dialog"
             aria-label="Ranking"
             className={`inline-flex h-8 shrink-0 items-center rounded-lg border-2 px-1.5 text-xs font-semibold tracking-wide transition-colors duration-200 min-[360px]:h-9 min-[360px]:px-2 min-[480px]:px-3 sm:h-11 sm:px-6 sm:text-sm ${
@@ -160,37 +160,56 @@ function Footer() {
 const REVEAL_KEY = 'hv-ranking-fechamento-visto';
 
 /**
- * Às sextas (dia do fechamento do ranking semanal) o modal abre sozinho com o
- * pódio, uma vez por dia e só se alguém pontuou na semana.
+ * O modal abre sozinho uma vez por dia: no dia 1º com o campeão do mês que
+ * acabou (se houver) e às sextas com o pódio da semana (se alguém pontuou).
+ * Se o dia 1º cair numa sexta, o campeão do mês tem prioridade.
  */
-function useClosingDayReveal(open: () => void) {
-  const [pending] = useState(() => {
-    if (!isRankingClosingDay()) return false;
+function useClosingDayReveal(open: (view: RankingView) => void) {
+  const [pending] = useState<RankingView | null>(() => {
+    const monthly = isMonthOpeningDay();
+    if (!monthly && !isRankingClosingDay()) return null;
     try {
-      return window.localStorage.getItem(REVEAL_KEY) !== rankingDayKey();
+      return window.localStorage.getItem(REVEAL_KEY) !== rankingDayKey() ? (monthly ? 'campeao' : 'semana') : null;
     } catch {
-      return false;
+      return null;
     }
   });
   const shown = useRef(false);
-  const weekly = useQuery({ queryKey: qk.weeklyRanking(0), queryFn: () => api.getWeeklyRanking(0), enabled: pending });
+  const weekly = useQuery({
+    queryKey: qk.weeklyRanking(0),
+    queryFn: () => api.getWeeklyRanking(0),
+    enabled: pending === 'semana',
+  });
+  const monthly = useQuery({
+    queryKey: qk.monthlyRanking(1),
+    queryFn: () => api.getMonthlyRanking(1),
+    enabled: pending === 'campeao',
+  });
 
   useEffect(() => {
-    const data = weekly.data;
-    if (!pending || shown.current || !data?.is_closing_day || data.entries.length === 0) return;
+    if (!pending || shown.current) return;
+    const ready =
+      pending === 'campeao'
+        ? Boolean(monthly.data?.champion)
+        : Boolean(weekly.data?.is_closing_day && weekly.data.entries.length > 0);
+    if (!ready) return;
     shown.current = true;
     try {
       window.localStorage.setItem(REVEAL_KEY, rankingDayKey());
     } catch {
       // Sem armazenamento: abre só nesta visita.
     }
-    open();
-  }, [pending, weekly.data, open]);
+    open(pending);
+  }, [pending, weekly.data, monthly.data, open]);
 }
 
 export function Layout() {
   const [rankingOpen, setRankingOpen] = useState(false);
-  const openRanking = useRef(() => setRankingOpen(true)).current;
+  const [rankingView, setRankingView] = useState<RankingView>('semana');
+  const openRanking = useRef((view: RankingView = 'semana') => {
+    setRankingView(view);
+    setRankingOpen(true);
+  }).current;
   useClosingDayReveal(openRanking);
   const [searchOpen, setSearchOpen] = useState(false);
   const openSearch = useRef(() => setSearchOpen(true)).current;
@@ -205,7 +224,7 @@ export function Layout() {
         Pular para o conteúdo
       </a>
       <Header rankingOpen={rankingOpen} onOpenRanking={openRanking} onOpenSearch={openSearch} />
-      <RankingDialog open={rankingOpen} onOpenChange={setRankingOpen} />
+      <RankingDialog open={rankingOpen} onOpenChange={setRankingOpen} view={rankingView} />
       <SearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
       <main id="conteudo" className="flex-1">
         <PageTransition />

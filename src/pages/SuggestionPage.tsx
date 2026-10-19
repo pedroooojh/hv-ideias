@@ -5,7 +5,7 @@ import { Ban, FolderOpen, History, Lock, MessageSquare, Pencil, RefreshCcw, Tras
 import { useAuth } from '@/auth/AuthProvider';
 import { api, qk } from '@/lib/api';
 import { toApiError } from '@/lib/errors';
-import { SUGGESTION_STATUS } from '@/lib/domain';
+import { SELECTED_STATUSES, SUGGESTION_STATUS } from '@/lib/domain';
 import { formatDate, formatDateTime, plural } from '@/lib/format';
 import { usePageTitle } from '@/lib/navigation';
 import { Comments } from '@/components/Comments';
@@ -66,7 +66,9 @@ export function SuggestionPage() {
   const s = query.data;
   const authorLocked = s.is_author && !isAdmin && !s.can_edit;
   const voteHint = s.is_author
-    ? 'Cada voto recebido vale 0,5 ponto para você no ranking.'
+    ? SELECTED_STATUSES.includes(s.status)
+      ? 'Ideia selecionada: cada voto recebido vale 2 pontos para você no ranking.'
+      : 'Cada voto recebido vale 1 ponto para você no ranking (o dobro se a ideia for selecionada).'
     : !s.voting_open
       ? 'Votação encerrada para este status.'
       : s.has_voted

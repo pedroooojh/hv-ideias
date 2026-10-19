@@ -3,7 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, MailPlus } from 'lucide-react';
 import { api, qk } from '@/lib/api';
 import { errorMessage } from '@/lib/errors';
-import { FormError, Modal } from './Modal';
+import { hasChanges } from '@/lib/unsavedChanges';
+import { FormError, Modal, ModalClose } from './Modal';
 import { useToast } from './Toast';
 
 /** Convite por e-mail (Gestão → Usuários). A pessoa recebe o link e cria a própria senha. */
@@ -42,10 +43,14 @@ export function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     mutation.mutate();
   };
 
+  const dirty = hasChanges({ email, name }, { email: '', name: '' });
+
   return (
     <Modal
       open={open}
-      onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}
+      onOpenChange={onOpenChange}
+      busy={mutation.isPending}
+      dirty={dirty}
       title="Convidar pessoa"
       description="Ela recebe um e-mail com o link para criar a senha e entrar na plataforma."
     >
@@ -63,7 +68,6 @@ export function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChan
             onChange={(e) => setEmail(e.target.value)}
             placeholder="nome@hubvision.com.br"
             autoComplete="off"
-            autoFocus
           />
         </div>
         <div>
@@ -82,9 +86,11 @@ export function InviteDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           <p className="mt-1.5 text-xs text-muted">A pessoa pode mudar depois, no perfil.</p>
         </div>
         <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
-          <button type="button" className="btn-secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
-            Cancelar
-          </button>
+          <ModalClose asChild>
+            <button type="button" className="btn-secondary" disabled={mutation.isPending}>
+              Cancelar
+            </button>
+          </ModalClose>
           <button type="submit" className="btn-primary" disabled={mutation.isPending}>
             {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <MailPlus className="h-4 w-4" aria-hidden />}
             Enviar convite

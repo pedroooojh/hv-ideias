@@ -4,7 +4,8 @@ import { Loader2 } from 'lucide-react';
 import { api, qk, type SuggestionInput } from '@/lib/api';
 import { LIMITS, lengthError } from '@/lib/domain';
 import { errorMessage } from '@/lib/errors';
-import { FormError, Modal } from './Modal';
+import { hasChanges } from '@/lib/unsavedChanges';
+import { FormError, Modal, ModalClose } from './Modal';
 import { SimilarSuggestions } from './SimilarSuggestions';
 import { CharCounter } from './ui';
 import { useToast } from './Toast';
@@ -28,13 +29,14 @@ export function SuggestionFormDialog({ open, onOpenChange, projectId, projectNam
   const types = useQuery({ queryKey: qk.types, queryFn: api.listSuggestionTypes, staleTime: 10 * 60_000 });
 
   const empty: SuggestionInput = { type: '', title: '', description: '' };
-  const [values, setValues] = useState<SuggestionInput>(editing ?? empty);
+  const initial: SuggestionInput = editing ? { type: editing.type, title: editing.title, description: editing.description } : empty;
+  const [values, setValues] = useState<SuggestionInput>(initial);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
-      setValues(editing ? { type: editing.type, title: editing.title, description: editing.description } : empty);
+      setValues(initial);
       setErrors({});
       setServerError(null);
     }
@@ -53,6 +55,9 @@ export function SuggestionFormDialog({ open, onOpenChange, projectId, projectNam
       queryClient.invalidateQueries({ queryKey: qk.stats });
       queryClient.invalidateQueries({ queryKey: qk.mySuggestions });
       queryClient.invalidateQueries({ queryKey: qk.myScore });
+      // Publicar vale pontos: ranking e perfis mudam.
+      queryClient.invalidateQueries({ queryKey: qk.ranking });
+      queryClient.invalidateQueries({ queryKey: qk.publicProfiles });
       queryClient.invalidateQueries({ queryKey: qk.adminSuggestions });
       toast.success(editing ? 'Sugestão atualizada.' : 'Sugestão publicada! Agora a comunidade pode votar nela.');
       onOpenChange(false);
@@ -60,6 +65,8 @@ export function SuggestionFormDialog({ open, onOpenChange, projectId, projectNam
     },
     onError: (err) => setServerError(errorMessage(err)),
   });
+
+  const dirty = hasChanges(values, initial);
 
   const validate = (v: SuggestionInput): Errors => {
     const next: Errors = {};
@@ -88,7 +95,9 @@ export function SuggestionFormDialog({ open, onOpenChange, projectId, projectNam
   return (
     <Modal
       open={open}
-      onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}
+      onOpenChange={onOpenChange}
+      busy={mutation.isPending}
+      dirty={dirty}
       title={editing ? 'Editar sugestão' : 'Nova sugestão'}
       description={<>Projeto: <strong className="text-ink">{projectName}</strong></>}
       size="lg"
@@ -146,7 +155,6 @@ export function SuggestionFormDialog({ open, onOpenChange, projectId, projectNam
             placeholder="Resuma a ideia em uma frase"
             aria-invalid={Boolean(errors.title)}
             aria-describedby={errors.title ? `${formId}-title-error` : undefined}
-            autoFocus
           />
           {errors.title && (
             <p id={`${formId}-title-error`} className="field-error">
@@ -191,9 +199,11 @@ export function SuggestionFormDialog({ open, onOpenChange, projectId, projectNam
         )}
 
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" className="btn-secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
-            Cancelar
-          </button>
+          <ModalClose asChild>
+            <button type="button" className="btn-secondary" disabled={mutation.isPending}>
+              Cancelar
+            </button>
+          </ModalClose>
           <button type="submit" className="btn-primary" disabled={mutation.isPending}>
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
             {editing ? 'Salvar alterações' : 'Publicar sugestão'}

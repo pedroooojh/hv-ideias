@@ -142,9 +142,51 @@ export interface WeeklyRanking {
   me: { rank_position: number | null; score: number; votes_received: number };
 }
 
+export interface MonthlyChampion {
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  score: number;
+  suggestion_count: number;
+  votes_received: number;
+  is_me: boolean;
+}
+
+export interface MonthlyRanking {
+  month_start: string;
+  /** Fim exclusivo: dia 1º 00:00 do mês seguinte. */
+  month_end: string;
+  /** Último dia do mês: dia do fechamento do mês atual. */
+  is_closing_day: boolean;
+  /** Mês encerrado lido do fechamento gravado (não muda mais). */
+  is_final: boolean;
+  total_count: number;
+  /** Classificação parcial; só no mês atual (meses encerrados mostram apenas o campeão). */
+  entries: Omit<RankingEntry, 'total_count'>[];
+  /** Campeão de um mês encerrado; null no mês atual ou se ninguém pontuou. */
+  champion: MonthlyChampion | null;
+  me: { rank_position: number | null; score: number; votes_received: number };
+}
+
+/** Quem ficou logo atrás do campeão num mês encerrado (posições a partir de 2). */
+export interface MonthlyRunnerUp extends MonthlyChampion {
+  rank_position: number;
+}
+
+export interface ChampionHistoryEntry {
+  month_start: string;
+  month_end: string;
+  user_id: string;
+  user_name: string;
+  user_avatar: string | null;
+  score: number;
+  votes_received: number;
+  is_me: boolean;
+}
+
 export interface NotificationItem {
   id: string;
-  kind: 'vote' | 'comment' | 'status' | 'podium';
+  kind: 'vote' | 'comment' | 'status' | 'podium' | 'champion';
   suggestion_id: string | null;
   suggestion_title: string | null;
   actor_name: string | null;
@@ -158,6 +200,8 @@ export interface NotificationItem {
     score?: number;
     week_start?: string;
     week_end?: string;
+    month_start?: string;
+    month_end?: string;
   };
   created_at: string;
   updated_at: string;
@@ -169,6 +213,8 @@ export interface Medals {
   gold: number;
   silver: number;
   bronze: number;
+  /** Vezes campeão do mês. */
+  champion: number;
 }
 
 export interface PublicProfile {
@@ -177,8 +223,9 @@ export interface PublicProfile {
   avatar_path: string | null;
   member_since: string;
   is_me: boolean;
-  rank_position: number | null;
-  score: number;
+  monthly_rank_position: number | null;
+  monthly_score: number;
+  /** Total de sempre (o ranking é por mês). */
   votes_received: number;
   weekly_rank_position: number | null;
   weekly_score: number;
@@ -476,6 +523,11 @@ export const api = {
     toPage(await rpcRows<RankingEntry>('get_ranking', { p_limit: limit, p_offset: offset }), offset, limit),
   getWeeklyRanking: (weeksAgo = 0, limit = 10) =>
     rpc<WeeklyRanking>('get_weekly_ranking', { p_weeks_ago: weeksAgo, p_limit: limit }),
+  getMonthlyRanking: (monthsAgo = 0, limit = 10) =>
+    rpc<MonthlyRanking>('get_monthly_ranking', { p_months_ago: monthsAgo, p_limit: limit }),
+  getMonthlyRunnersUp: (monthsAgo = 1, limit = 4) =>
+    rpcRows<MonthlyRunnerUp>('get_monthly_runners_up', { p_months_ago: monthsAgo, p_limit: limit }),
+  listMonthlyChampions: (limit = 12) => rpcRows<ChampionHistoryEntry>('list_monthly_champions', { p_limit: limit }),
 
   // Perfil público ------------------------------------------------------------
   getPublicProfile: (userId: string) => rpc<PublicProfile>('get_public_profile', { p_user_id: userId }),
@@ -610,9 +662,13 @@ export const qk = {
   suggestion: (id: string) => ['suggestion', id] as const,
   statusHistory: (id: string) => ['status-history', id] as const,
   comments: (suggestionId: string) => ['comments', suggestionId] as const,
+  /** Classificação do mês atual (página /ranking e aba "Este mês"). */
   ranking: ['ranking'] as const,
-  /** Começa com 'ranking': invalidar qk.ranking também atualiza o ranking semanal. */
+  /** Começam com 'ranking': invalidar qk.ranking também atualiza semana, mês e campeões. */
   weeklyRanking: (weeksAgo: number) => ['ranking', 'weekly', weeksAgo] as const,
+  monthlyRanking: (monthsAgo: number) => ['ranking', 'monthly', monthsAgo] as const,
+  monthlyChampions: ['ranking', 'champions'] as const,
+  monthlyRunnersUp: (monthsAgo: number) => ['ranking', 'monthly', monthsAgo, 'runners-up'] as const,
   myScore: ['my-score'] as const,
   /** Começa com 'profile': mudanças no perfil (nome, foto) também o atualizam. */
   publicProfile: (userId: string) => ['profile', 'public', userId] as const,

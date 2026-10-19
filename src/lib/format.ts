@@ -46,6 +46,7 @@ const weekDayFormatter = new Intl.DateTimeFormat('pt-BR', { timeZone: RANKING_TZ
 const weekMonthFormatter = new Intl.DateTimeFormat('pt-BR', { timeZone: RANKING_TZ, month: 'short' });
 const weekdayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: RANKING_TZ, weekday: 'short' });
 const dayKeyFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: RANKING_TZ });
+const monthFormatter = new Intl.DateTimeFormat('pt-BR', { timeZone: RANKING_TZ, month: 'long', year: 'numeric' });
 
 /** "10 a 16 de out." ou "27 de set. a 3 de out." — o fim é exclusivo (sábado 00:00 seguinte). */
 export function formatWeekRange(start: string | Date, endExclusive: string | Date): string {
@@ -63,3 +64,23 @@ export const isRankingClosingDay = (now: Date = new Date()) => weekdayFormatter.
 
 /** Data no fuso do ranking (AAAA-MM-DD), para marcar "já vi o fechamento de hoje". */
 export const rankingDayKey = (now: Date = new Date()) => dayKeyFormatter.format(now);
+
+/**
+ * Dias inteiros entre hoje e o último dia do período (fim exclusivo), no horário
+ * de Brasília: 0 no próprio dia do fechamento.
+ */
+export function daysUntilClose(endExclusive: string | Date, now: Date = new Date()): number {
+  const day = (d: Date) => Date.parse(`${dayKeyFormatter.format(d)}T00:00:00Z`);
+  const lastDay = new Date(new Date(endExclusive).getTime() - 1);
+  return Math.max(0, Math.round((day(lastDay) - day(now)) / 86_400_000));
+}
+
+/** "outubro de 2026" — o mês do ranking, no horário de Brasília. */
+export const formatMonth = (start: string | Date) => monthFormatter.format(new Date(start));
+
+/** Último dia do mês no horário de Brasília: dia do fechamento do ranking mensal. */
+export const isMonthClosingDay = (now: Date = new Date()) =>
+  weekDayFormatter.format(new Date(now.getTime() + 86_400_000)) === '1';
+
+/** Dia 1º no horário de Brasília: o campeão do mês que acabou acaba de ser definido. */
+export const isMonthOpeningDay = (now: Date = new Date()) => weekDayFormatter.format(now) === '1';

@@ -27,10 +27,19 @@ export function GuidelinesPage() {
             <li>Cada pessoa pode dar no máximo um voto positivo em cada sugestão e pode retirá-lo quando quiser.</li>
             <li>Não é possível votar na própria sugestão.</li>
             <li>
-              Cada voto positivo válido recebido vale <strong className="text-ink">0,5 ponto</strong> para o autor da sugestão.
-              Publicar, comentar ou mudar de status não gera pontos por si só.
+              Publicar uma sugestão vale <strong className="text-ink">0,5 ponto</strong> e cada voto positivo válido recebido
+              vale <strong className="text-ink">1 ponto</strong> para o autor. Comentar não gera pontos.
+            </li>
+            <li>
+              Quando a equipe seleciona a ideia (status Planejado, Em desenvolvimento ou Implementado), os pontos dela{' '}
+              <strong className="text-ink">dobram</strong>: o autor recebe de novo o que ela já tinha e cada voto seguinte vale 2
+              pontos. Se ela voltar para Em análise ou Não aprovado, o dobro deixa de contar.
             </li>
             <li>Votos retirados e sugestões excluídas deixam de contar pontos.</li>
+            <li>
+              O ranking da semana (sábado a sexta) mostra o pódio na sexta-feira. O ranking que vale prêmio é o do mês: no
+              último dia, às 23h59 (horário de Brasília), quem estiver em 1º lugar é o campeão do mês.
+            </li>
             <li>
               Os votos medem o interesse da comunidade; a decisão de executar uma ideia é da equipe responsável pelo projeto.
             </li>

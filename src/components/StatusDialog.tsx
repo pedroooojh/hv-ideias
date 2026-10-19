@@ -4,7 +4,8 @@ import { Loader2 } from 'lucide-react';
 import { api, qk } from '@/lib/api';
 import { LIMITS, SUGGESTION_STATUS, SUGGESTION_STATUS_ORDER, type SuggestionStatus } from '@/lib/domain';
 import { errorMessage } from '@/lib/errors';
-import { FormError, Modal } from './Modal';
+import { hasChanges } from '@/lib/unsavedChanges';
+import { FormError, Modal, ModalClose } from './Modal';
 import { CharCounter } from './ui';
 import { useToast } from './Toast';
 
@@ -48,6 +49,10 @@ export function StatusDialog({ open, onOpenChange, suggestionId, projectId, curr
         qk.mySuggestions,
         qk.adminSuggestions,
         qk.userSuggestionLists,
+        // A seleção (ou a saída dela) muda os pontos do autor.
+        qk.ranking,
+        qk.myScore,
+        qk.publicProfiles,
       ]) {
         queryClient.invalidateQueries({ queryKey: key });
       }
@@ -74,13 +79,16 @@ export function StatusDialog({ open, onOpenChange, suggestionId, projectId, curr
   };
 
   const reasonRequired = status === 'nao_aprovado';
+  const dirty = hasChanges({ status, reason }, { status: currentStatus, reason: currentReason ?? '' });
 
   return (
     <Modal
       open={open}
-      onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}
+      onOpenChange={onOpenChange}
+      busy={mutation.isPending}
+      dirty={dirty}
       title="Alterar status"
-      description="A mudança fica registrada no histórico da sugestão e na auditoria. Os votos e os pontos não são alterados."
+      description="A mudança fica registrada no histórico da sugestão e na auditoria. Planejado, Em desenvolvimento e Implementado contam como ideia selecionada: os pontos do autor dobram."
     >
       <form onSubmit={submit} noValidate className="space-y-5">
         {serverError && <FormError message={serverError} />}
@@ -140,9 +148,11 @@ export function StatusDialog({ open, onOpenChange, suggestionId, projectId, curr
         </div>
 
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" className="btn-secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
-            Cancelar
-          </button>
+          <ModalClose asChild>
+            <button type="button" className="btn-secondary" disabled={mutation.isPending}>
+              Cancelar
+            </button>
+          </ModalClose>
           <button type="submit" className="btn-primary" disabled={mutation.isPending}>
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
             Salvar status

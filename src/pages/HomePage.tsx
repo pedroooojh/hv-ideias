@@ -40,7 +40,7 @@ function Hero({ stats, loading, failed }: { stats?: PlatformStats; loading: bool
         <p className="hero-gap hero-text mt-7 max-w-xl text-base leading-relaxed text-muted sm:text-lg">
           Explore os projetos da Hubvision, sugira melhorias e novas funcionalidades, relate problemas e vote nas ideias
           que você gostaria de ver realizadas.{' '}
-          Cada voto que suas ideias recebem vale pontos no ranking.
+          Cada ideia publicada e cada voto recebido valem pontos, e o campeão do mês é premiado.
         </p>
         <div className="hero-gap mt-10 max-w-xl border-t border-line pt-8">
           {loading ? (

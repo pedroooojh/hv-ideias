@@ -7,7 +7,8 @@ import { api, qk, type CommentItem } from '@/lib/api';
 import { LIMITS, lengthError } from '@/lib/domain';
 import { errorMessage } from '@/lib/errors';
 import { formatDateTime, plural } from '@/lib/format';
-import { ConfirmDialog } from './Modal';
+import { useBeforeUnloadGuard } from '@/lib/unsavedChanges';
+import { ConfirmDialog, DiscardChangesDialog } from './Modal';
 import { RichText } from './RichText';
 import { useToast } from './Toast';
 import { PersonLink } from './PersonLink';
@@ -96,6 +97,7 @@ function CommentForm({ suggestionId, projectId }: { suggestionId: string; projec
   const invalidate = useInvalidateComments(suggestionId, projectId);
   const [content, setContent] = useState('');
   const [error, setError] = useState<string | null>(null);
+  useBeforeUnloadGuard(content.trim() !== '');
 
   const mutation = useMutation({
     mutationFn: (text: string) => api.createComment(suggestionId, text),
@@ -157,6 +159,9 @@ function CommentRow({ comment: c, suggestionId, projectId }: { comment: CommentI
   const [draft, setDraft] = useState(c.content ?? '');
   const [error, setError] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const draftDirty = editing && draft.trim() !== (c.content ?? '').trim();
+  useBeforeUnloadGuard(draftDirty);
 
   const save = useMutation({
     mutationFn: (text: string) => api.updateComment(c.id, text),
@@ -176,6 +181,12 @@ function CommentRow({ comment: c, suggestionId, projectId }: { comment: CommentI
       </li>
     );
   }
+
+  const stopEditing = () => {
+    setEditing(false);
+    setDraft(c.content ?? '');
+    setError(null);
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -212,7 +223,6 @@ function CommentRow({ comment: c, suggestionId, projectId }: { comment: CommentI
               onChange={(e) => setDraft(e.target.value)}
               aria-invalid={Boolean(error)}
               aria-describedby={error ? `${id}-edit-error` : undefined}
-              autoFocus
             />
             {error && (
               <p id={`${id}-edit-error`} className="field-error" role="alert">
@@ -223,11 +233,7 @@ function CommentRow({ comment: c, suggestionId, projectId }: { comment: CommentI
               <button
                 type="button"
                 className="btn-ghost px-3 py-1.5"
-                onClick={() => {
-                  setEditing(false);
-                  setDraft(c.content ?? '');
-                  setError(null);
-                }}
+                onClick={() => (draftDirty ? setDiscardOpen(true) : stopEditing())}
               >
                 Cancelar
               </button>
@@ -245,7 +251,14 @@ function CommentRow({ comment: c, suggestionId, projectId }: { comment: CommentI
         {!editing && (c.can_edit || c.can_delete) && (
           <div className="mt-1.5 flex animate-fade-in gap-3 text-xs">
             {c.can_edit && (
-              <button type="button" className="inline-flex items-center gap-1 text-muted hover:text-ink" onClick={() => setEditing(true)}>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-muted hover:text-ink"
+                onClick={() => {
+                  setDraft(c.content ?? '');
+                  setEditing(true);
+                }}
+              >
                 <Pencil className="h-3.5 w-3.5" aria-hidden /> Editar
               </button>
             )}
@@ -257,6 +270,7 @@ function CommentRow({ comment: c, suggestionId, projectId }: { comment: CommentI
           </div>
         )}
       </div>
+      <DiscardChangesDialog open={discardOpen} onOpenChange={setDiscardOpen} onDiscard={stopEditing} />
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}

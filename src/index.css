@@ -179,7 +179,7 @@
   }
   .field-input {
     @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm text-ink placeholder:text-muted/70
-      focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/25 aria-[invalid=true]:border-danger;
+      focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/25 focus:ring-offset-0 aria-[invalid=true]:border-danger;
   }
   .field-error {
     @apply mt-1.5 text-sm text-danger;
@@ -679,6 +679,154 @@
     animation: none !important;
   }
   .hv-confetti {
+    display: none;
+  }
+}
+
+/* Revelação do campeão do mês (RankingDialog): palco com holofote, raios
+   girando, anel dourado e os "quase lá" entrando depois. Também usa --d. */
+@keyframes hv-stage-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes hv-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes hv-appear {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes hv-rays-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes hv-ring-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 18px 2px rgb(255 213 74 / 0.45);
+  }
+  50% {
+    box-shadow: 0 0 42px 10px rgb(255 213 74 / 0.7);
+  }
+}
+@keyframes hv-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+@keyframes hv-twinkle {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4) rotate(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
+  }
+}
+@keyframes hv-gold-pan {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes hv-bar-fill {
+  from {
+    width: 0;
+  }
+}
+.hv-stage {
+  animation: hv-stage-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.1) var(--d, 0s) both;
+}
+.hv-fade-up {
+  animation: hv-fade-up 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.1) var(--d, 0s) both;
+}
+.hv-spotlight {
+  clip-path: polygon(38% 0, 62% 0, 100% 100%, 0 100%);
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0.22), rgb(255 255 255 / 0));
+  animation: hv-appear 1.2s ease-out var(--d, 0s) both;
+}
+.hv-rays {
+  animation: hv-appear 1.4s ease-out var(--d, 0s) both;
+}
+.hv-rays::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: repeating-conic-gradient(from 0deg, rgb(255 213 74 / 0.18) 0deg 7deg, transparent 7deg 22.5deg);
+  mask-image: radial-gradient(circle, #000 0%, #000 22%, transparent 68%);
+  animation: hv-rays-spin 26s linear infinite;
+}
+.hv-gold-ring {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  animation: hv-ring-glow 2.6s ease-in-out var(--d, 0s) infinite;
+}
+.hv-gold-ring::before {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  z-index: -1;
+  background: conic-gradient(#ffd54a, #b8860b, #fff3c4, #d4a017, #ffd54a);
+  animation: hv-rays-spin 4s linear infinite;
+}
+.hv-burst {
+  background: radial-gradient(circle, rgb(255 236 160 / 0.9), rgb(255 213 74 / 0.35) 40%, transparent 70%);
+  animation: hv-burst 0.9s ease-out var(--d, 0s) both;
+}
+.hv-twinkle {
+  animation: hv-twinkle 2.4s ease-in-out var(--d, 0s) infinite both;
+}
+.hv-gold-text {
+  background: linear-gradient(100deg, #ffd54a 20%, #fff7d6 40%, #ffd54a 60%, #e0a82e 80%) 0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: hv-gold-pan 3.5s linear var(--d, 0s) infinite;
+}
+.hv-bar {
+  width: var(--w);
+  animation: hv-bar-fill 0.9s cubic-bezier(0.2, 0.9, 0.3, 1) var(--d, 0s) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hv-stage,
+  .hv-fade-up,
+  .hv-spotlight,
+  .hv-rays,
+  .hv-rays::before,
+  .hv-gold-ring,
+  .hv-gold-ring::before,
+  .hv-gold-text,
+  .hv-bar {
+    animation: none !important;
+  }
+  .hv-burst,
+  .hv-twinkle {
     display: none;
   }
 }

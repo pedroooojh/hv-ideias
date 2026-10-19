@@ -2,10 +2,11 @@ import { useState } from 'react';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, CheckCheck, MessageSquare, RefreshCcw, ThumbsUp, Trophy } from 'lucide-react';
+import { Bell, CheckCheck, Crown, MessageSquare, RefreshCcw, ThumbsUp, Trophy } from 'lucide-react';
 import { api, qk, type NotificationItem } from '@/lib/api';
 import { SUGGESTION_STATUS } from '@/lib/domain';
-import { formatNumber, formatRelative, formatWeekRange } from '@/lib/format';
+import { formatMonth, formatNumber, formatRelative, formatWeekRange } from '@/lib/format';
+import type { RankingView } from './RankingDialog';
 import { Skeleton } from './ui';
 
 const LIST_KEY = [...qk.notifications, 'list'] as const;
@@ -53,11 +54,21 @@ function describe(n: NotificationItem): { icon: JSX.Element; text: JSX.Element }
           </>
         ),
       };
+    case 'champion':
+      return {
+        icon: <Crown className="h-4 w-4" />,
+        text: (
+          <>
+            Você é o <strong className="font-semibold text-ink">campeão do mês</strong>
+            {n.data.month_start ? ` de ${formatMonth(n.data.month_start)}` : ''}! Parabéns, o prêmio é seu.
+          </>
+        ),
+      };
   }
 }
 
 /** Sininho do cabeçalho: contagem de não lidas (atualiza a cada minuto) e lista ao abrir. */
-export function NotificationBell({ className, onOpenRanking }: { className: string; onOpenRanking: () => void }) {
+export function NotificationBell({ className, onOpenRanking }: { className: string; onOpenRanking: (view?: RankingView) => void }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -78,7 +89,8 @@ export function NotificationBell({ className, onOpenRanking }: { className: stri
   const openItem = (n: NotificationItem) => {
     if (!n.is_read) markRead.mutate([n.id]);
     setOpen(false);
-    if (n.kind === 'podium') onOpenRanking();
+    if (n.kind === 'podium') onOpenRanking('semana');
+    else if (n.kind === 'champion') onOpenRanking('campeao');
     else if (n.suggestion_id) navigate(`/sugestoes/${n.suggestion_id}`);
   };
 
@@ -151,7 +163,7 @@ export function NotificationBell({ className, onOpenRanking }: { className: stri
                   >
                     <span
                       className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full ${
-                        n.kind === 'podium' ? 'bg-[#d4a017]/15 text-[#d4a017]' : 'bg-brand-soft text-brand'
+                        n.kind === 'podium' || n.kind === 'champion' ? 'bg-[#d4a017]/15 text-[#d4a017]' : 'bg-brand-soft text-brand'
                       }`}
                       aria-hidden
                     >

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import type { Profile } from '@/lib/api';
@@ -97,5 +97,27 @@ describe('Configurações da conta: senha', () => {
     expect(auth.updateUser).toHaveBeenCalledWith({ password: 'senha-nova-123' });
     // O formulário fecha depois de salvar.
     expect(screen.queryByLabelText('Nova senha')).not.toBeInTheDocument();
+  });
+});
+
+describe('Configurações da conta: alterações não salvas', () => {
+  it('fecha direto sem nada digitado e pergunta quando há texto', async () => {
+    renderCard();
+    openPasswordForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByLabelText('Nova senha')).not.toBeInTheDocument();
+
+    openPasswordForm();
+    fill('Nova senha', 'senha-nova-123');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(await screen.findByRole('dialog', { name: 'Sair sem salvar?' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continuar editando' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.getByLabelText('Nova senha')).toHaveValue('senha-nova-123');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Descartar e sair' }));
+    await waitFor(() => expect(screen.queryByLabelText('Nova senha')).not.toBeInTheDocument());
   });
 });

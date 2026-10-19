@@ -7,7 +7,7 @@ import { Avatar, SuggestionStatusChip, TypeChip, toneFor } from './ui';
 import { RichText } from './RichText';
 import { VoteButton } from './VoteButton';
 
-/** A partir deste tamanho a descrição aparece resumida e o link vira "Ler mais detalhes". */
+/** A partir deste tamanho a descrição aparece resumida e o link vira "Ler mais detalhes" (senão, "Abrir sugestão"). */
 const LONG_DESCRIPTION = 280;
 
 export function SuggestionCard({ suggestion: s }: { suggestion: SuggestionListItem }) {
@@ -49,12 +49,13 @@ export function SuggestionCard({ suggestion: s }: { suggestion: SuggestionListIt
           </p>
         )}
         <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-4">
+          {/* Sempre abre no topo da sugestão; a discussão fica logo abaixo (e o contador de comentários leva até ela). */}
           <Link
-            to={isLong ? `/sugestoes/${s.id}` : `/sugestoes/${s.id}#discussao`}
+            to={`/sugestoes/${s.id}`}
             className="inline-flex items-center gap-1.5 font-bold text-brand hover:underline"
-            aria-label={`${isLong ? 'Ler mais detalhes' : 'Ver discussão'}: ${s.title}`}
+            aria-label={`${isLong ? 'Ler mais detalhes' : 'Abrir sugestão'}: ${s.title}`}
           >
-            {isLong ? 'Ler mais detalhes' : 'Ver discussão'} <ArrowRight className="h-4 w-4" aria-hidden />
+            {isLong ? 'Ler mais detalhes' : 'Abrir sugestão'} <ArrowRight className="h-4 w-4" aria-hidden />
           </Link>
           <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted sm:text-[0.9375rem]">
             <span className="inline-flex items-center gap-2">

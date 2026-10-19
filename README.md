@@ -68,7 +68,7 @@ O repositório está vinculado ao projeto Supabase **hv-ideias** (`ksecprrlkwxii
 
 ### Opção 2: emulador local (sem Docker e sem projeto Supabase)
 
-Para desenvolvimento e testes manuais, `scripts/local/server.mjs` emula as rotas do Supabase que o app usa (`/auth/v1`, `/rest/v1/rpc` e o Storage das fotos, com links assinados e as mesmas políticas de acesso), aplicando **as mesmas migrações** num Postgres embutido. Não é um substituto de produção: não envia e-mails (a troca de e-mail é imediata), só tem login por e-mail/senha, não tem pg_cron (fecha o ranking semanal ao iniciar e de hora em hora) e guarda os dados em `./.local-supabase`.
+Para desenvolvimento e testes manuais, `scripts/local/server.mjs` emula as rotas do Supabase que o app usa (`/auth/v1`, `/rest/v1/rpc` e o Storage das fotos, com links assinados e as mesmas políticas de acesso), aplicando **as mesmas migrações** num Postgres embutido. Não é um substituto de produção: não envia e-mails (a troca de e-mail é imediata), só tem login por e-mail/senha, não tem pg_cron (fecha a semana e o mês do ranking ao iniciar e de hora em hora) e guarda os dados em `./.local-supabase`.
 
 Em dois terminais:
 
@@ -80,7 +80,7 @@ npm run emulador
 npm run dev:emulador
 ```
 
-`npm run emulador` cria dados de demonstração quando o banco está vazio (3 projetos, sugestões, votos e comentários, criados pelas próprias RPCs). As contas de teste e a senha estão em [scripts/local/seed.mjs](scripts/local/seed.mjs). Para recriar do zero, use `npm run emulador:reset`.
+`npm run emulador` cria dados de demonstração quando o banco está vazio (3 projetos, sugestões, votos e comentários, criados pelas próprias RPCs). As contas de teste e a senha estão em [scripts/local/seed.mjs](scripts/local/seed.mjs). Para recriar do zero, use `npm run emulador:reset`. Para ver a revelação do campeão do mês sem esperar a virada do mês, pare o emulador e rode `node scripts/local/demo-last-month.mjs`: ele cria sugestões e votos datados no mês passado e grava o campeão.
 
 Na tela de login, o modo emulador mostra o bloco **Ambiente local de demonstração**, com os botões *Administrador* e *Usuário comum*. Eles fazem login de verdade no emulador com as contas de teste. O bloco só aparece quando `VITE_DEMO_LOGIN`/`VITE_DEMO_PASSWORD` estão definidos ([.env.emulator](.env.emulator)) **e** o Supabase configurado é `localhost`; no build de produção o código e as credenciais de teste não existem.
 
@@ -106,19 +106,26 @@ Hospedagem: é uma SPA estática. O arquivo `public/_redirects` faz o fallback d
 - Novos votos só são aceitos com status *Em análise*, *Planejado* ou *Em desenvolvimento*, em projeto não arquivado. Retirar o voto é sempre permitido.
 
 **Pontuação**
-- `pontuação = votos positivos válidos recebidos × 0,5`, calculada a partir dos votos armazenados (view `private.user_scores`, regra única em `private.points_per_vote()`). Não existe campo de pontos editável.
-- Não geram pontos: publicar, comentar, mudar de status, votos retirados, sugestões excluídas e sugestões de projetos excluídos.
-- Ranking ordenado por pontos; desempate por mais votos recebidos, depois participação mais antiga (primeira sugestão). Exibe nome público e foto (com link para o perfil público), nunca e-mail. Contas desativadas não aparecem.
+- Para o autor da sugestão: **0,5 ponto** por sugestão publicada e **1 ponto** por voto positivo válido recebido.
+- Ideia **selecionada** pela administração (status *Planejado*, *Em desenvolvimento* ou *Implementado*): os pontos dela dobram. No momento da seleção o autor recebe de novo o que a sugestão já tinha, e cada voto seguinte vale 2. Voltar para *Em análise* ou *Não aprovado* tira o dobro; uma nova seleção conta a nova data (`suggestions.selected_at`, mantida por trigger).
+- Cada ponto tem data (publicação, voto ou seleção) e entra na semana e no mês dessa data. Tudo é calculado a partir dos dados armazenados (view `private.score_events`, regras em `private.points_per_suggestion()` e `private.points_per_vote()`). Não existe campo de pontos editável.
+- Não geram pontos: comentar, votos retirados, sugestões excluídas e sugestões de projetos excluídos.
+- Classificação por pontos; desempate por mais votos recebidos no período, depois quem chegou primeiro à pontuação. Exibe nome público e foto (com link para o perfil público), nunca e-mail. Contas desativadas não aparecem.
 
 **Ranking semanal**
-- A semana vai de sábado 00:00 a sexta 23:59 (horário de Brasília) e conta só os votos recebidos nela; o ranking geral não muda.
+- A semana vai de sábado 00:00 a sexta 23:59 (horário de Brasília) e conta só os pontos ganhos nela.
 - Na sexta, o botão RANKING abre o pódio do fechamento (com animação) e o modal abre sozinho uma vez no dia.
 - No sábado 00:05 o `pg_cron` grava o top 10 da semana em `weekly_results`; semanas encerradas passam a vir do registro gravado (não mudam mais) e o top 3 vira medalha no perfil e notificação.
 
+**Ranking mensal (o que vale prêmio)**
+- O mês do calendário (horário de Brasília) substitui o antigo ranking geral acumulado: a página `/ranking` e a aba "Este mês" mostram a classificação parcial do mês.
+- No dia 1º 00:05 o `pg_cron` grava em `monthly_results` **só o campeão** do mês que terminou (sem pódio); ele recebe notificação, ganha o título "Campeão do mês" no perfil e entra na galeria de campeões. No dia 1º o modal abre sozinho com a revelação do campeão.
+- Embaixo do campeão aparecem os **"Quase lá"** (2º ao 5º do mês, com a distância até o 1º). Não são gravados: vêm calculados pela mesma regra (`get_monthly_runners_up`) e nunca repetem o campeão gravado.
+
 **Perfil, fotos e notificações**
-- Perfil público em `/pessoas/:id`: posição, pontos, medalhas e sugestões da pessoa.
+- Perfil público em `/pessoas/:id`: posição e pontos no mês, pontos na semana, títulos de campeão, medalhas e sugestões da pessoa.
 - Foto de perfil enquadrada no navegador e reduzida para 256×256; fica no bucket **privado** `avatars` e só contas ativas a veem (links assinados de 1 hora). Administradores removem fotos impróprias (com auditoria).
-- Notificações no app (sininho): votos e comentários nas suas ideias (agrupados por sugestão), mudanças de status e pódio da semana. São geradas por triggers.
+- Notificações no app (sininho): votos e comentários nas suas ideias (agrupados por sugestão), mudanças de status, pódio da semana e campeão do mês. São geradas por triggers.
 - Busca em todos os projetos (botão de lupa ou Ctrl+K) e aviso de ideias parecidas ao escrever uma sugestão nova.
 
 **Sugestões**
@@ -187,7 +194,7 @@ npm test
 - **H** comentários e moderação
 - **I** registros inexistentes e projetos arquivados
 
-Também cobre ranking semanal e fechamento gravado, fotos (Storage e moderação), notificações, perfil público, busca e privacidade (exportar e excluir conta). Em `src/**/__tests__` ficam os testes de interface (modal do ranking, troca de senha, links das fotos). Os demais cenários de interface (incluindo **J**, responsividade) foram validados manualmente no navegador com o emulador local.
+Também cobre ranking semanal e fechamento gravado, ranking mensal e campeão, dobro da seleção, fotos (Storage e moderação), notificações, perfil público, busca e privacidade (exportar e excluir conta). Em `src/**/__tests__` ficam os testes de interface (modal do ranking, troca de senha, links das fotos, confirmação ao fechar formulários com alterações). Os demais cenários de interface (incluindo **J**, responsividade) foram validados manualmente no navegador com o emulador local.
 
 ## Pendências e evolução
 

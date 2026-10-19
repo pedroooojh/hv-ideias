@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { useBack, type BackTarget } from '@/lib/navigation';
 import { AlertCircle, ArrowLeft, Loader2, RefreshCw } from 'lucide-react';
@@ -71,6 +71,7 @@ const AVATAR_DIMS = {
   md: 'h-10 w-10 text-sm',
   lg: 'h-14 w-14 text-base',
   xl: 'h-20 w-20 text-2xl',
+  '2xl': 'h-28 w-28 text-4xl',
 };
 
 /** Foto de perfil (caminho no Storage) ou, sem foto ou se ela falhar, as iniciais. */
@@ -86,26 +87,32 @@ export function Avatar({
   tone?: number;
 }) {
   const [failed, setFailed] = useState(false);
+  // Qual link já terminou de carregar (trocar de foto volta às iniciais até a nova chegar).
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const src = useAvatarUrl(photo);
+  const loaded = src !== null && loadedSrc === src;
   useEffect(() => setFailed(false), [photo]);
   const tones = ['bg-navy text-white dark:text-page', 'bg-teal text-white dark:text-page', 'bg-ink text-page', 'bg-brand text-white dark:text-page'];
   const palette = tones[Math.abs(tone) % tones.length];
   const dims = AVATAR_DIMS[size];
-  const src = useAvatarUrl(photo);
-  if (src && !failed) {
-    return (
-      <img
-        src={src}
-        alt=""
-        aria-hidden
-        loading="lazy"
-        onError={() => setFailed(true)}
-        className={`shrink-0 rounded-full bg-subtle object-cover ${dims}`}
-      />
-    );
-  }
+  // As iniciais ficam por baixo até a foto terminar de carregar; aí a foto aparece por cima, suave.
   return (
-    <span className={`inline-flex shrink-0 items-center justify-center rounded-full font-bold ${dims} ${palette}`} aria-hidden>
+    <span className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full font-bold ${dims} ${palette}`} aria-hidden>
       {initials(name)}
+      {src && !failed && (
+        <img
+          // Foto já em cache dispara o load antes do React ligar o evento: confere ao montar.
+          ref={(img) => {
+            if (img?.complete && img.naturalWidth > 0 && !loaded) setLoadedSrc(src);
+          }}
+          src={src}
+          alt=""
+          decoding="async"
+          onLoad={() => setLoadedSrc(src)}
+          onError={() => setFailed(true)}
+          className={`absolute inset-0 h-full w-full rounded-full bg-subtle object-cover transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        />
+      )}
     </span>
   );
 }
@@ -115,6 +122,17 @@ export function toneFor(name: string | null): number {
   let h = 0;
   for (const ch of name ?? '') h = (h * 31 + ch.charCodeAt(0)) | 0;
   return h;
+}
+
+/**
+ * Inclinação sutil e "aleatória" das medalhas (5° a 14°, para um lado ou para o
+ * outro). Vem de um hash da semente: cada medalha tem o seu ângulo, mas ele não
+ * muda a cada renderização.
+ */
+export function medalTilt(seed: string): CSSProperties {
+  const h = Math.abs(Math.imul(toneFor(seed), 2654435761 | 0)) % 1000;
+  const deg = (5 + (h % 10)) * (h % 2 === 0 ? 1 : -1);
+  return { transform: `rotate(${deg}deg)` };
 }
 
 export function SuggestionStatusChip({ status }: { status: SuggestionStatus }) {

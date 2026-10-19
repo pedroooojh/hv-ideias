@@ -3,17 +3,42 @@ import { supabase } from './supabase';
 
 // As fotos ficam num bucket privado: para exibir, o app pede links assinados
 // (válidos por 1 hora). Os pedidos de uma mesma tela são agrupados numa única
-// chamada e os links ficam em memória até perto de expirar, para o navegador
-// reaproveitar a imagem em cache.
+// chamada e os links ficam guardados até perto de expirar — também entre
+// recarregamentos da página. Cada pedido gera um link novo, então reaproveitar
+// o mesmo link é o que deixa o navegador usar a imagem do cache em vez de
+// baixá-la de novo.
 
 const BUCKET = 'avatars';
 const TTL_SECONDS = 3600;
 /** Renova com folga para um link não vencer com a página aberta. */
 const REFRESH_MARGIN_MS = 5 * 60_000;
 
-const cache = new Map<string, { url: string | null; expires: number }>();
+const STORAGE_KEY = 'hv-avatar-urls';
+
+type Entry = { url: string | null; expires: number };
+const cache = new Map<string, Entry>(readStored());
 const waiting = new Map<string, Array<(url: string | null) => void>>();
 let timer: ReturnType<typeof setTimeout> | null = null;
+
+function readStored(): [string, Entry][] {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    const entries = raw ? (JSON.parse(raw) as [string, Entry][]) : [];
+    return entries.filter(([, e]) => e.url && e.expires - REFRESH_MARGIN_MS > Date.now());
+  } catch {
+    return [];
+  }
+}
+
+/** Guarda só os links válidos (falhas são tentadas de novo na próxima visita). */
+function persist() {
+  try {
+    const entries = [...cache.entries()].filter(([, e]) => e.url && e.expires - REFRESH_MARGIN_MS > Date.now());
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    // armazenamento indisponível: os links valem só enquanto a página estiver aberta
+  }
+}
 
 function fresh(path: string) {
   const hit = cache.get(path);
@@ -39,6 +64,7 @@ async function flush() {
     cache.set(path, { url, expires: url ? expires : Date.now() + 60_000 + REFRESH_MARGIN_MS });
     resolvers.forEach((resolve) => resolve(url));
   }
+  persist();
 }
 
 export function getAvatarUrl(path: string): Promise<string | null> {
@@ -69,4 +95,9 @@ export function useAvatarUrl(path: string | null | undefined): string | null {
 /** Esquece os links (ex.: ao sair da conta). */
 export function clearAvatarUrls() {
   cache.clear();
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // nada guardado
+  }
 }

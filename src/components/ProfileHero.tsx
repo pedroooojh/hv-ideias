@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Medal } from 'lucide-react';
+import { Crown, Medal } from 'lucide-react';
 import type { Medals, PublicProfile } from '@/lib/api';
 import { formatNumber, formatPoints } from '@/lib/format';
 import { Skeleton } from './ui';
@@ -10,15 +10,23 @@ const MEDAL_STYLE = [
   { key: 'bronze', label: '3º lugar', color: '#c07a3f' },
 ] as const;
 
-const hasMedals = (data: PublicProfile | undefined) =>
-  Boolean(data && data.medals.gold + data.medals.silver + data.medals.bronze > 0);
+const medalTotal = (m: Medals) => m.gold + m.silver + m.bronze + (m.champion ?? 0);
+const hasMedals = (data: PublicProfile | undefined) => Boolean(data && medalTotal(data.medals) > 0);
 
-/** Medalhas dos fechamentos semanais; não aparece enquanto a pessoa não tiver nenhuma. */
+/**
+ * Títulos de campeão do mês e medalhas dos fechamentos semanais; não aparece
+ * enquanto a pessoa não tiver nenhum.
+ */
 export function MedalRow({ medals }: { medals: Medals }) {
-  const total = medals.gold + medals.silver + medals.bronze;
-  if (total === 0) return null;
+  if (medalTotal(medals) === 0) return null;
   return (
-    <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Medalhas no ranking semanal">
+    <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Títulos e medalhas no ranking">
+      {medals.champion > 0 && (
+        <li className="chip border border-[#d4a017]/40 bg-[#d4a017]/10 py-0.5 font-semibold text-ink" title={`${medals.champion}× campeão do mês`}>
+          <Crown className="h-3.5 w-3.5 fill-[#ffd54a] text-[#d4a017]" aria-hidden />
+          {formatNumber(medals.champion)}× Campeão do mês
+        </li>
+      )}
       {MEDAL_STYLE.filter((m) => medals[m.key] > 0).map((m) => (
         <li
           key={m.key}
@@ -74,8 +82,8 @@ export function ProfileHero({
             [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[4.25rem] rounded-xl" />)
           ) : (
             <>
-              <Stat label="Posição geral" value={data.rank_position ? `${data.rank_position}º` : '—'} highlight />
-              <Stat label="Pontos" value={formatPoints(data.score)} />
+              <Stat label="Posição no mês" value={data.monthly_rank_position ? `${data.monthly_rank_position}º` : '—'} highlight />
+              <Stat label="Pontos no mês" value={formatPoints(data.monthly_score)} />
               <Stat label="Na semana" value={formatPoints(data.weekly_score)} />
               <Stat label="Votos recebidos" value={formatNumber(data.votes_received)} />
             </>

@@ -23,6 +23,22 @@ describe('links assinados das fotos', () => {
     expect(createSignedUrls).toHaveBeenCalledTimes(1);
   });
 
+  it('reaproveita os links depois de recarregar a página e os esquece ao sair da conta', async () => {
+    await getAvatarUrl('a/1.webp');
+    expect(createSignedUrls).toHaveBeenCalledTimes(1);
+
+    // "Recarregar": módulo novo, sem o cache em memória.
+    vi.resetModules();
+    const reloaded = await import('../avatarUrls');
+    expect(await reloaded.getAvatarUrl('a/1.webp')).toBe('https://cdn.test/a/1.webp?token=t');
+    expect(createSignedUrls).toHaveBeenCalledTimes(1);
+
+    reloaded.clearAvatarUrls();
+    vi.resetModules();
+    await (await import('../avatarUrls')).getAvatarUrl('a/1.webp');
+    expect(createSignedUrls).toHaveBeenCalledTimes(2);
+  });
+
   it('sem acesso à foto devolve null (o avatar mostra as iniciais)', async () => {
     createSignedUrls.mockResolvedValueOnce({ data: [{ path: 'x/y.webp', signedUrl: null as unknown as string }] });
     expect(await getAvatarUrl('x/y.webp')).toBeNull();

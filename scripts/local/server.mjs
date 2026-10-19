@@ -585,14 +585,16 @@ if (args.includes('--seed')) {
     console.log('[emulador] --seed ignorado: o banco já possui projetos (use --reset --seed para recriar).');
   }
 }
-// No Supabase o pg_cron grava o fechamento semanal no sábado; aqui não há pg_cron,
-// então o emulador fecha a semana anterior ao iniciar e confere de hora em hora.
-async function closeRankingWeek() {
-  const { rows } = await db.query(`select private.close_ranking_week(1) as n`);
-  if (rows[0].n > 0) console.log(`[emulador] fechamento semanal gravado (${rows[0].n} posições)`);
+// No Supabase o pg_cron grava o fechamento semanal (sábado) e o mensal (dia 1º);
+// aqui não há pg_cron, então o emulador fecha a semana e o mês anteriores ao
+// iniciar e confere de hora em hora.
+async function closeRankingPeriods() {
+  const { rows } = await db.query(`select private.close_ranking_week(1) as w, private.close_ranking_month(1) as m`);
+  if (rows[0].w > 0) console.log(`[emulador] fechamento semanal gravado (${rows[0].w} posições)`);
+  if (rows[0].m > 0) console.log('[emulador] campeão do mês gravado');
 }
-await serialize(closeRankingWeek);
-setInterval(() => serialize(closeRankingWeek).catch((err) => console.error('[emulador] fechamento semanal', err)), 3_600_000).unref();
+await serialize(closeRankingPeriods);
+setInterval(() => serialize(closeRankingPeriods).catch((err) => console.error('[emulador] fechamento do ranking', err)), 3_600_000).unref();
 
 server.listen(PORT, () => {
   console.log(`[emulador] Supabase local em http://localhost:${PORT}${fresh ? ' (banco novo)' : ''}`);

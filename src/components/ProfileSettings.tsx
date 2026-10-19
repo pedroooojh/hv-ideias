@@ -8,7 +8,8 @@ import { ApiError, MIN_PASSWORD, authMessage, errorMessage } from '@/lib/errors'
 import { checkAvatarFile, prepareAvatar, type CropArea } from '@/lib/image';
 import { supabase } from '@/lib/supabase';
 import { AvatarCropDialog } from './AvatarCropDialog';
-import { FormError, Modal } from './Modal';
+import { useBeforeUnloadGuard } from '@/lib/unsavedChanges';
+import { DiscardChangesDialog, FormError, Modal } from './Modal';
 import { useToast } from './Toast';
 import { Avatar, toneFor } from './ui';
 
@@ -164,11 +165,24 @@ export function AccountCard({
   const { user } = useAuth();
   const [editing, setEditing] = useState<Editing>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const toggle = (next: Editing) => {
+  // O formulário aberto avisa se há algo digitado; trocar ou fechar com alterações pede confirmação.
+  const [formDirty, setFormDirty] = useState(false);
+  const [leavingTo, setLeavingTo] = useState<Editing | undefined>(undefined);
+  useBeforeUnloadGuard(formDirty);
+  const switchTo = (next: Editing) => {
     setNotice(null);
-    setEditing((current) => (current === next ? null : next));
+    setFormDirty(false);
+    setEditing(next);
   };
-  const done = () => setEditing(null);
+  const toggle = (row: Exclude<Editing, null>) => {
+    const next = editing === row ? null : row;
+    if (formDirty) setLeavingTo(next);
+    else switchTo(next);
+  };
+  const done = () => {
+    setFormDirty(false);
+    setEditing(null);
+  };
 
   return (
     <section className="card p-6" aria-labelledby="conta-titulo">
@@ -211,7 +225,7 @@ export function AccountCard({
           open={editing === 'name'}
           onToggle={() => toggle('name')}
         >
-          <NameForm currentName={profile.name} onDone={done} />
+          <NameForm currentName={profile.name} onDone={done} onDirtyChange={setFormDirty} />
         </AccountRow>
 
         {user?.email && (
@@ -226,6 +240,7 @@ export function AccountCard({
             >
               <EmailForm
                 currentEmail={user.email}
+                onDirtyChange={setFormDirty}
                 onDone={(message) => {
                   done();
                   setNotice(message);
@@ -239,7 +254,7 @@ export function AccountCard({
               open={editing === 'password'}
               onToggle={() => toggle('password')}
             >
-              <PasswordForm email={user.email} onDone={done} />
+              <PasswordForm email={user.email} onDone={done} onDirtyChange={setFormDirty} />
             </AccountRow>
           </>
         )}
@@ -253,6 +268,12 @@ export function AccountCard({
       )}
 
       {user?.email && <PrivacySection email={user.email} onDeleted={onSignOut} />}
+
+      <DiscardChangesDialog
+        open={leavingTo !== undefined}
+        onOpenChange={(open) => !open && setLeavingTo(undefined)}
+        onDiscard={() => switchTo(leavingTo ?? null)}
+      />
 
       <div className="mt-5 border-t border-line pt-4">
         <button type="button" className="btn-ghost w-full justify-start px-3 text-danger hover:bg-danger/10 hover:text-danger" onClick={onSignOut}>
@@ -305,13 +326,17 @@ function AccountRow({
   );
 }
 
-function NameForm({ currentName, onDone }: { currentName: string; onDone: () => void }) {
+type DirtyReport = (dirty: boolean) => void;
+
+function NameForm({ currentName, onDone, onDirtyChange }: { currentName: string; onDone: () => void; onDirtyChange: DirtyReport }) {
   const id = useId();
   const toast = useToast();
   const refresh = useRefreshAuthors();
   const [name, setName] = useState(currentName);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => setName(currentName), [currentName]);
+  const dirty = name.trim() !== currentName.trim();
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   const mutation = useMutation({
     mutationFn: (value: string) => api.updateMyProfile(value),
@@ -347,7 +372,6 @@ function NameForm({ currentName, onDone }: { currentName: string; onDone: () => 
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${id}-name-error` : undefined}
           autoComplete="name"
-          autoFocus
         />
         {error && (
           <p id={`${id}-name-error`} className="field-error" role="alert">
@@ -371,14 +395,12 @@ function PasswordField({
   value,
   onChange,
   autoComplete,
-  autoFocus = false,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
   autoComplete: string;
-  autoFocus?: boolean;
 }) {
   return (
     <div>
@@ -392,18 +414,27 @@ function PasswordField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         autoComplete={autoComplete}
-        autoFocus={autoFocus}
       />
     </div>
   );
 }
 
-function EmailForm({ currentEmail, onDone }: { currentEmail: string; onDone: (message: string | null) => void }) {
+function EmailForm({
+  currentEmail,
+  onDone,
+  onDirtyChange,
+}: {
+  currentEmail: string;
+  onDone: (message: string | null) => void;
+  onDirtyChange: DirtyReport;
+}) {
   const id = useId();
   const toast = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const dirty = email.trim() !== '' || password !== '';
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -449,7 +480,6 @@ function EmailForm({ currentEmail, onDone }: { currentEmail: string; onDone: (me
           onChange={(e) => setEmail(e.target.value)}
           autoComplete="email"
           placeholder="nome@empresa.com.br"
-          autoFocus
         />
       </div>
       <PasswordField id={`${id}-current`} label="Senha atual" value={password} onChange={setPassword} autoComplete="current-password" />
@@ -463,13 +493,15 @@ function EmailForm({ currentEmail, onDone }: { currentEmail: string; onDone: (me
   );
 }
 
-function PasswordForm({ email, onDone }: { email: string; onDone: () => void }) {
+function PasswordForm({ email, onDone, onDirtyChange }: { email: string; onDone: () => void; onDirtyChange: DirtyReport }) {
   const id = useId();
   const toast = useToast();
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const dirty = current !== '' || next !== '' || confirm !== '';
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -497,7 +529,7 @@ function PasswordForm({ email, onDone }: { email: string; onDone: () => void }) 
   return (
     <form onSubmit={submit} noValidate className="space-y-3">
       {error && <FormError message={error} />}
-      <PasswordField id={`${id}-current`} label="Senha atual" value={current} onChange={setCurrent} autoComplete="current-password" autoFocus />
+      <PasswordField id={`${id}-current`} label="Senha atual" value={current} onChange={setCurrent} autoComplete="current-password" />
       <PasswordField id={`${id}-new`} label="Nova senha" value={next} onChange={setNext} autoComplete="new-password" />
       <PasswordField id={`${id}-confirm`} label="Confirme a nova senha" value={confirm} onChange={setConfirm} autoComplete="new-password" />
       <div className="flex justify-end">
@@ -624,7 +656,7 @@ function DeleteAccountDialog({
           <li>Antes, se quiser, baixe uma cópia dos seus dados.</li>
         </ul>
         {error && <FormError message={error} />}
-        <PasswordField id={`${id}-password`} label="Senha atual" value={password} onChange={setPassword} autoComplete="current-password" autoFocus />
+        <PasswordField id={`${id}-password`} label="Senha atual" value={password} onChange={setPassword} autoComplete="current-password" />
         <div>
           <label htmlFor={`${id}-word`} className="field-label">
             Digite {CONFIRM_WORD} para confirmar

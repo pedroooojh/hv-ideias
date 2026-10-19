@@ -4,7 +4,8 @@ import { Loader2 } from 'lucide-react';
 import { api, qk, type ProjectInput } from '@/lib/api';
 import { LIMITS, PROJECT_STATUS, PROJECT_STATUS_HINT, PROJECT_STATUS_ORDER, lengthError } from '@/lib/domain';
 import { errorMessage } from '@/lib/errors';
-import { FormError, Modal } from './Modal';
+import { hasChanges } from '@/lib/unsavedChanges';
+import { FormError, Modal, ModalClose } from './Modal';
 import { ComboField, Dot, Select } from './Select';
 import { CharCounter } from './ui';
 import { useToast } from './Toast';
@@ -25,13 +26,16 @@ export function ProjectFormDialog({ open, onOpenChange, editing, knownCategories
   const queryClient = useQueryClient();
   const toast = useToast();
   const id = useId();
-  const [values, setValues] = useState<ProjectInput>(EMPTY);
+  const initial: ProjectInput = editing
+    ? { name: editing.name, description: editing.description, category: editing.category, status: editing.status }
+    : EMPTY;
+  const [values, setValues] = useState<ProjectInput>(initial);
   const [errors, setErrors] = useState<Errors>({});
   const [serverError, setServerError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
-      setValues(editing ? { name: editing.name, description: editing.description, category: editing.category, status: editing.status } : EMPTY);
+      setValues(initial);
       setErrors({});
       setServerError(null);
     }
@@ -53,6 +57,8 @@ export function ProjectFormDialog({ open, onOpenChange, editing, knownCategories
     },
     onError: (err) => setServerError(errorMessage(err)),
   });
+
+  const dirty = hasChanges(values, initial);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -89,7 +95,9 @@ export function ProjectFormDialog({ open, onOpenChange, editing, knownCategories
   return (
     <Modal
       open={open}
-      onOpenChange={(next) => !mutation.isPending && onOpenChange(next)}
+      onOpenChange={onOpenChange}
+      busy={mutation.isPending}
+      dirty={dirty}
       title={editing ? 'Editar projeto' : 'Novo projeto'}
       size="lg"
     >
@@ -106,7 +114,6 @@ export function ProjectFormDialog({ open, onOpenChange, editing, knownCategories
             onChange={(e) => set('name', e.target.value)}
             aria-invalid={Boolean(errors.name)}
             aria-describedby={errors.name ? `${id}-name-error` : undefined}
-            autoFocus
           />
           {fieldError('name')}
         </div>
@@ -169,9 +176,11 @@ export function ProjectFormDialog({ open, onOpenChange, editing, knownCategories
         </div>
 
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" className="btn-secondary" onClick={() => onOpenChange(false)} disabled={mutation.isPending}>
-            Cancelar
-          </button>
+          <ModalClose asChild>
+            <button type="button" className="btn-secondary" disabled={mutation.isPending}>
+              Cancelar
+            </button>
+          </ModalClose>
           <button type="submit" className="btn-primary" disabled={mutation.isPending}>
             {mutation.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
             {editing ? 'Salvar alterações' : 'Criar projeto'}
