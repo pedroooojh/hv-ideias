@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Ban, FolderOpen, History, Lock, MessageSquare, Pencil, RefreshCcw, Trash2 } from 'lucide-react';
+import { Ban, FolderInput, FolderOpen, History, Lock, MessageSquare, Pencil, RefreshCcw, Trash2 } from 'lucide-react';
 import { useAuth } from '@/auth/AuthProvider';
 import { api, qk } from '@/lib/api';
 import { toApiError } from '@/lib/errors';
@@ -11,6 +11,7 @@ import { usePageTitle } from '@/lib/navigation';
 import { Comments } from '@/components/Comments';
 import { RichText } from '@/components/RichText';
 import { ConfirmDialog } from '@/components/Modal';
+import { MoveSuggestionDialog } from '@/components/MoveSuggestionDialog';
 import { StatusDialog } from '@/components/StatusDialog';
 import { SuggestionFormDialog } from '@/components/SuggestionFormDialog';
 import { useToast } from '@/components/Toast';
@@ -31,6 +32,7 @@ export function SuggestionPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
 
   const query = useQuery({ queryKey: qk.suggestion(suggestionId), queryFn: () => api.getSuggestion(suggestionId) });
   const history = useQuery({
@@ -67,8 +69,8 @@ export function SuggestionPage() {
   const authorLocked = s.is_author && !isAdmin && !s.can_edit;
   const voteHint = s.is_author
     ? SELECTED_STATUSES.includes(s.status)
-      ? 'Ideia selecionada: cada voto recebido vale 2 pontos para você no ranking.'
-      : 'Cada voto recebido vale 1 ponto para você no ranking (o dobro se a ideia for selecionada).'
+      ? 'Ideia selecionada: você ganhou 3 pontos de bônus no ranking.'
+      : 'Os votos rendem pontos conforme o público da área (valem mais onde há menos gente); +3 se a ideia for selecionada.'
     : !s.voting_open
       ? 'Votação encerrada para este status.'
       : s.has_voted
@@ -150,9 +152,14 @@ export function SuggestionPage() {
             {(isAdmin || s.can_edit || s.can_delete) && (
               <div className="flex flex-wrap gap-2">
                 {isAdmin && (
-                  <button type="button" className="btn-secondary py-2" onClick={() => setStatusOpen(true)}>
-                    <RefreshCcw className="h-4 w-4" aria-hidden /> Alterar status
-                  </button>
+                  <>
+                    <button type="button" className="btn-secondary py-2" onClick={() => setStatusOpen(true)}>
+                      <RefreshCcw className="h-4 w-4" aria-hidden /> Alterar status
+                    </button>
+                    <button type="button" className="btn-secondary py-2" onClick={() => setMoveOpen(true)}>
+                      <FolderInput className="h-4 w-4" aria-hidden /> Mover
+                    </button>
+                  </>
                 )}
                 {s.can_edit && (
                   <button type="button" className="btn-secondary py-2" onClick={() => setEditOpen(true)}>
@@ -232,6 +239,15 @@ export function SuggestionPage() {
           projectId={s.project_id}
           currentStatus={s.status}
           currentReason={s.status_reason}
+        />
+      )}
+      {isAdmin && (
+        <MoveSuggestionDialog
+          open={moveOpen}
+          onOpenChange={setMoveOpen}
+          suggestionId={s.id}
+          projectId={s.project_id}
+          projectName={s.project_name}
         />
       )}
       <ConfirmDialog

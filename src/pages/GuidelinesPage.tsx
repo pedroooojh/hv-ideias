@@ -27,13 +27,31 @@ export function GuidelinesPage() {
             <li>Cada pessoa pode dar no máximo um voto positivo em cada sugestão e pode retirá-lo quando quiser.</li>
             <li>Não é possível votar na própria sugestão.</li>
             <li>
-              Publicar uma sugestão vale <strong className="text-ink">0,5 ponto</strong> e cada voto positivo válido recebido
-              vale <strong className="text-ink">1 ponto</strong> para o autor. Comentar não gera pontos.
+              Publicar uma sugestão vale <strong className="text-ink">1 ponto</strong> para o autor. Se a ideia for marcada como
+              Não aprovado, esse ponto deixa de contar. Comentar não gera pontos.
             </li>
             <li>
-              Quando a equipe seleciona a ideia (status Planejado, Em desenvolvimento ou Implementado), os pontos dela{' '}
-              <strong className="text-ink">dobram</strong>: o autor recebe de novo o que ela já tinha e cada voto seguinte vale 2
-              pontos. Se ela voltar para Em análise ou Não aprovado, o dobro deixa de contar.
+              Os votos contam pela <strong className="text-ink">média ajustada</strong> ao público da área: pontos dos votos ={' '}
+              <strong className="text-ink">10 × votos ÷ (público + 5)</strong>. O público são as pessoas que votaram em alguma
+              ideia da área nos últimos 90 dias. Os 5 a mais funcionam como pessoas que ainda não votaram: com pouca gente, a
+              aprovação é puxada para baixo até haver gente suficiente para confirmá-la. Exemplos: 4 de 4 votos rendem 4,4
+              pontos; 20 de 50, 3,6; 2 de 2, 2,9. Quando mais pessoas passam a votar na área, cada voto vale um pouco menos.
+            </li>
+            <li>
+              Quando a equipe seleciona a ideia (status Planejado, Em desenvolvimento ou Implementado), o autor ganha{' '}
+              <strong className="text-ink">3 pontos</strong> de bônus. Se ela voltar para Em análise ou Não aprovado, o bônus
+              deixa de contar.
+            </li>
+            <li>
+              Os pontos são somados por <strong className="text-ink">área</strong> (a categoria do projeto). A área em que você
+              mais pontuou no período vale <strong className="text-ink">100%</strong>, a 2ª vale{' '}
+              <strong className="text-ink">50%</strong> e as demais <strong className="text-ink">25%</strong>. Assim, quem
+              conhece a fundo um projeto disputa de igual para igual com quem atua em vários. Exemplo: 12 pontos numa área só
+              valem 12; 6, 5, 4 e 3 pontos em quatro áreas valem 6 + 2,5 + 1 + 0,75 = 10,25.
+            </li>
+            <li>
+              Publique cada ideia no projeto a que ela se refere. A equipe pode mover uma sugestão para o projeto certo; os
+              pontos dela passam a contar na área nova.
             </li>
             <li>Votos retirados e sugestões excluídas deixam de contar pontos.</li>
             <li>

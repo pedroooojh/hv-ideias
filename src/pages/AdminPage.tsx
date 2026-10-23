@@ -503,6 +503,7 @@ const ACTION_LABEL: Record<string, string> = {
   'suggestion.update': 'editou a sugestão',
   'suggestion.delete': 'excluiu a sugestão',
   'suggestion.status_change': 'alterou o status da sugestão',
+  'suggestion.move': 'moveu de projeto a sugestão',
   'comment.moderate': 'removeu um comentário em',
   'user.update': 'alterou a conta de',
   'user.avatar_remove': 'removeu a foto de perfil de',
@@ -523,6 +524,9 @@ function describeChange(entry: AuditEntry): string | null {
   if (entry.action === 'suggestion.status_change') {
     const reason = next.reason ? ` — “${String(next.reason)}”` : '';
     return `${statusLabel(prev.status)} → ${statusLabel(next.status)}${reason}`;
+  }
+  if (entry.action === 'suggestion.move') {
+    return `${String(prev.project ?? '?')} → ${String(next.project ?? '?')}`;
   }
   if (entry.action === 'user.update') {
     const parts: string[] = [];

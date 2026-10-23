@@ -2,7 +2,7 @@ import { useState } from 'react';
 import * as Menu from '@radix-ui/react-dropdown-menu';
 import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, CheckCheck, Crown, MessageSquare, RefreshCcw, ThumbsUp, Trophy } from 'lucide-react';
+import { Bell, CheckCheck, Crown, FolderInput, MessageSquare, RefreshCcw, ThumbsUp, Trophy } from 'lucide-react';
 import { api, qk, type NotificationItem } from '@/lib/api';
 import { SUGGESTION_STATUS } from '@/lib/domain';
 import { formatMonth, formatNumber, formatRelative, formatWeekRange } from '@/lib/format';
@@ -44,6 +44,15 @@ function describe(n: NotificationItem): { icon: JSX.Element; text: JSX.Element }
         ),
       };
     }
+    case 'moved':
+      return {
+        icon: <FolderInput className="h-4 w-4" />,
+        text: (
+          <>
+            {title} foi movida para o projeto <strong className="font-semibold text-ink">{n.data.new_project}</strong>
+          </>
+        ),
+      };
     case 'podium':
       return {
         icon: <Trophy className="h-4 w-4" />,

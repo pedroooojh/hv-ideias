@@ -150,7 +150,9 @@ function MySuggestions() {
                     </div>
                     <div className="flex shrink-0 items-center gap-3">
                       <div className="text-right">
-                        <p className="font-display font-bold text-navy">{formatPoints(s.points)} pts</p>
+                        <p className="font-display font-bold text-navy" title="Pontos que a ideia rendeu neste mês, antes do peso da área">
+                          {formatPoints(s.points)} pts no mês
+                        </p>
                         <p className="text-xs text-muted">{formatNumber(s.vote_count)} votos</p>
                       </div>
                       <ChevronRight className="h-4 w-4 text-muted transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
