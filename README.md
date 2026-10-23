@@ -106,9 +106,12 @@ Hospedagem: é uma SPA estática. O arquivo `public/_redirects` faz o fallback d
 - Novos votos só são aceitos com status *Em análise*, *Planejado* ou *Em desenvolvimento*, em projeto não arquivado. Retirar o voto é sempre permitido.
 
 **Pontuação**
-- Para o autor da sugestão: **0,5 ponto** por sugestão publicada e **1 ponto** por voto positivo válido recebido.
-- Ideia **selecionada** pela administração (status *Planejado*, *Em desenvolvimento* ou *Implementado*): os pontos dela dobram. No momento da seleção o autor recebe de novo o que a sugestão já tinha, e cada voto seguinte vale 2. Voltar para *Em análise* ou *Não aprovado* tira o dobro; uma nova seleção conta a nova data (`suggestions.selected_at`, mantida por trigger).
-- Cada ponto tem data (publicação, voto ou seleção) e entra na semana e no mês dessa data. Tudo é calculado a partir dos dados armazenados (view `private.score_events`, regras em `private.points_per_suggestion()` e `private.points_per_vote()`). Não existe campo de pontos editável.
+- Para o autor da sugestão: **1 ponto** por sugestão publicada (perdido se ela for marcada *Não aprovado*).
+- **Votos pela média ajustada**: os votos que a ideia recebeu no período valem `10 × votos ÷ (público da área + 5)`. O público são as pessoas que votaram em alguma ideia da área nos 90 dias até o fim do período. Os 5 a mais funcionam como pessoas que não votaram: com pouca gente a aprovação é puxada para baixo, então 4 de 4 votos (4,4 pts) vale mais que 20 de 50 (3,6) e que 2 de 2 (2,9). Efeito colateral conhecido: quando mais gente passa a votar na área, os votos das ideias dela valem um pouco menos (o público é contado sobre 90 dias para isso mudar devagar).
+- Ideia **selecionada** pela administração (status *Planejado*, *Em desenvolvimento* ou *Implementado*): **+3 pontos** de bônus, na data da seleção. Voltar para *Em análise* ou *Não aprovado* tira o bônus; uma nova seleção conta a nova data (`suggestions.selected_at`, mantida por trigger).
+- **Peso por área**: a área é a categoria do projeto (sem diferenciar maiúsculas). Em cada período, os pontos da pessoa são somados por área; a área em que ela mais pontuou vale **100%**, a 2ª **50%** e as demais **25%**. Assim, quem atua em muitos projetos não ganha vantagem só por isso, e dividir ou juntar projetos de uma mesma área não muda o ranking. A composição aparece no perfil e no ranking (`areas` em `get_ranking`/`get_my_score`, `monthly_areas` no perfil público); em "Minhas sugestões" cada ideia mostra os pontos que rendeu no mês, antes do peso. A pontuação tem centésimos (`numeric(12, 2)`).
+- A administração pode **mover uma sugestão** para outro projeto (`move_suggestion`), para corrigir ideias postadas no lugar errado: os pontos passam para a área nova (semanas e meses já fechados não mudam), o autor é avisado e a mudança fica na auditoria.
+- Publicação, votos e seleção têm data e entram na semana e no mês dessa data. Tudo é calculado a partir dos dados armazenados (`private.suggestion_points_between()` para cada ideia, `private.area_audience()` para o público e `private.area_scores_between()` para os pesos; valores em `points_per_suggestion()`, `vote_scale()`, `audience_prior()`, `audience_window()`, `selection_bonus()` e `area_weight()`). Não existe campo de pontos editável.
 - Não geram pontos: comentar, votos retirados, sugestões excluídas e sugestões de projetos excluídos.
 - Classificação por pontos; desempate por mais votos recebidos no período, depois quem chegou primeiro à pontuação. Exibe nome público e foto (com link para o perfil público), nunca e-mail. Contas desativadas não aparecem.
 
@@ -125,7 +128,7 @@ Hospedagem: é uma SPA estática. O arquivo `public/_redirects` faz o fallback d
 **Perfil, fotos e notificações**
 - Perfil público em `/pessoas/:id`: posição e pontos no mês, pontos na semana, títulos de campeão, medalhas e sugestões da pessoa.
 - Foto de perfil enquadrada no navegador e reduzida para 256×256; fica no bucket **privado** `avatars` e só contas ativas a veem (links assinados de 1 hora). Administradores removem fotos impróprias (com auditoria).
-- Notificações no app (sininho): votos e comentários nas suas ideias (agrupados por sugestão), mudanças de status, pódio da semana e campeão do mês. São geradas por triggers.
+- Notificações no app (sininho): votos e comentários nas suas ideias (agrupados por sugestão), mudanças de status, sugestão movida de projeto, pódio da semana e campeão do mês. São geradas por triggers.
 - Busca em todos os projetos (botão de lupa ou Ctrl+K) e aviso de ideias parecidas ao escrever uma sugestão nova.
 
 **Sugestões**
@@ -194,7 +197,7 @@ npm test
 - **H** comentários e moderação
 - **I** registros inexistentes e projetos arquivados
 
-Também cobre ranking semanal e fechamento gravado, ranking mensal e campeão, dobro da seleção, fotos (Storage e moderação), notificações, perfil público, busca e privacidade (exportar e excluir conta). Em `src/**/__tests__` ficam os testes de interface (modal do ranking, troca de senha, links das fotos, confirmação ao fechar formulários com alterações). Os demais cenários de interface (incluindo **J**, responsividade) foram validados manualmente no navegador com o emulador local.
+Também cobre ranking semanal e fechamento gravado, ranking mensal e campeão, bônus da seleção, peso por área, mover sugestão de projeto, fotos (Storage e moderação), notificações, perfil público, busca e privacidade (exportar e excluir conta). Em `src/**/__tests__` ficam os testes de interface (modal do ranking, troca de senha, links das fotos, confirmação ao fechar formulários com alterações). Os demais cenários de interface (incluindo **J**, responsividade) foram validados manualmente no navegador com o emulador local.
 
 ## Pendências e evolução
 

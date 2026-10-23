@@ -61,12 +61,9 @@ export function typeChipClass(slug: string): string {
   return 'bg-teal-soft text-teal';
 }
 
-// Pontuação. O cálculo é feito no banco (private.score_events); aqui só para textos.
-/** Cada voto positivo válido recebido vale 1 ponto para o autor da sugestão. */
-export const POINTS_PER_VOTE = 1;
-/** Publicar uma sugestão vale 0,5 ponto, para incentivar novas ideias. */
-export const POINTS_PER_SUGGESTION = 0.5;
-/** Status que contam como "selecionada pela administração": os pontos da ideia dobram. */
+// Pontuação. O cálculo é feito no banco (private.suggestion_points_between e
+// private.area_scores_between); aqui só o que a interface precisa.
+/** Status que contam como "selecionada pela administração": o autor ganha 3 pontos. */
 export const SELECTED_STATUSES: SuggestionStatus[] = ['planejado', 'em_desenvolvimento', 'implementado'];
 
 /** Mesmos limites validados no banco, para feedback imediato nos formulários. */

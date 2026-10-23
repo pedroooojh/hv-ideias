@@ -18,6 +18,7 @@ describe('formatação', () => {
   it('formata pontos com uma casa decimal em pt-BR', () => {
     expect(formatPoints(3)).toBe('3,0');
     expect(formatPoints(4.5)).toBe('4,5');
+    expect(formatPoints(8.75)).toBe('8,75');
   });
 
   it('descreve datas relativas', () => {

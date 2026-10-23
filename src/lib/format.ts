@@ -7,7 +7,8 @@ const dateTimeFormatter = new Intl.DateTimeFormat('pt-BR', {
   minute: '2-digit',
 });
 const numberFormatter = new Intl.NumberFormat('pt-BR');
-const pointsFormatter = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+// Pesos de área (0,5 e 0,25) geram centésimos: "8,75".
+const pointsFormatter = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
 
 export const formatDate = (value: string | Date) => dateFormatter.format(new Date(value));
 export const formatDateTime = (value: string | Date) => dateTimeFormatter.format(new Date(value));
