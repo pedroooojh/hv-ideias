@@ -117,6 +117,19 @@ export interface CommentItem {
   total_count: number;
 }
 
+/**
+ * Pontos de uma área (categoria do projeto) no período: a área mais forte vale
+ * 100%, a 2ª 50% e as demais 25%.
+ */
+export interface AreaScore {
+  area: string;
+  /** Pontos antes do peso. */
+  points: number;
+  weight: number;
+  /** points × weight. */
+  score: number;
+}
+
 export interface RankingEntry {
   rank_position: number;
   user_id: string;
@@ -127,6 +140,8 @@ export interface RankingEntry {
   votes_received: number;
   is_me: boolean;
   total_count: number;
+  /** Composição dos pontos do mês por área. */
+  areas: AreaScore[];
 }
 
 export interface WeeklyRanking {
@@ -138,7 +153,7 @@ export interface WeeklyRanking {
   /** Semana encerrada lida do fechamento gravado (não muda mais). */
   is_final: boolean;
   total_count: number;
-  entries: Omit<RankingEntry, 'total_count'>[];
+  entries: Omit<RankingEntry, 'total_count' | 'areas'>[];
   me: { rank_position: number | null; score: number; votes_received: number };
 }
 
@@ -162,7 +177,7 @@ export interface MonthlyRanking {
   is_final: boolean;
   total_count: number;
   /** Classificação parcial; só no mês atual (meses encerrados mostram apenas o campeão). */
-  entries: Omit<RankingEntry, 'total_count'>[];
+  entries: Omit<RankingEntry, 'total_count' | 'areas'>[];
   /** Campeão de um mês encerrado; null no mês atual ou se ninguém pontuou. */
   champion: MonthlyChampion | null;
   me: { rank_position: number | null; score: number; votes_received: number };
@@ -186,7 +201,7 @@ export interface ChampionHistoryEntry {
 
 export interface NotificationItem {
   id: string;
-  kind: 'vote' | 'comment' | 'status' | 'podium' | 'champion';
+  kind: 'vote' | 'comment' | 'status' | 'podium' | 'champion' | 'moved';
   suggestion_id: string | null;
   suggestion_title: string | null;
   actor_name: string | null;
@@ -202,6 +217,8 @@ export interface NotificationItem {
     week_end?: string;
     month_start?: string;
     month_end?: string;
+    previous_project?: string;
+    new_project?: string;
   };
   created_at: string;
   updated_at: string;
@@ -225,6 +242,7 @@ export interface PublicProfile {
   is_me: boolean;
   monthly_rank_position: number | null;
   monthly_score: number;
+  monthly_areas: AreaScore[];
   /** Total de sempre (o ranking é por mês). */
   votes_received: number;
   weekly_rank_position: number | null;
@@ -264,6 +282,7 @@ export interface MyScore {
   score: number;
   suggestion_count: number;
   votes_received: number;
+  areas: AreaScore[];
 }
 
 export interface MySuggestion {
@@ -274,6 +293,7 @@ export interface MySuggestion {
   status: SuggestionStatus;
   created_at: string;
   vote_count: number;
+  /** Pontos que a ideia rendeu no mês atual, antes do peso da área. */
   points: number;
   total_count: number;
 }
@@ -498,6 +518,8 @@ export const api = {
   deleteSuggestion: (id: string) => rpc<void>('delete_suggestion', { p_id: id }),
   setSuggestionStatus: (id: string, status: SuggestionStatus, reason: string | null) =>
     rpc<void>('set_suggestion_status', { p_id: id, p_status: status, p_reason: reason }),
+  /** Administração: corrige o projeto da sugestão (os pontos passam para a área nova). */
+  moveSuggestion: (id: string, projectId: string) => rpc<void>('move_suggestion', { p_id: id, p_project_id: projectId }),
 
   // Votos --------------------------------------------------------------------
   setVote: (suggestionId: string, vote: boolean) =>

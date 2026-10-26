@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Crown, Medal } from 'lucide-react';
 import type { Medals, PublicProfile } from '@/lib/api';
 import { formatNumber, formatPoints } from '@/lib/format';
+import { AreaBreakdown } from './AreaBreakdown';
 import { Skeleton } from './ui';
 
 const MEDAL_STYLE = [
@@ -90,6 +91,12 @@ export function ProfileHero({
           )}
         </dl>
       </div>
+      {data && data.monthly_areas.length > 0 && (
+        <div className="-mt-2 px-6 pb-5 sm:px-8">
+          <p className="text-xs text-muted">Pontos do mês por área · a mais forte vale 100%, a 2ª 50% e as demais 25%</p>
+          <AreaBreakdown areas={data.monthly_areas} className="mt-1.5" />
+        </div>
+      )}
       {(hasMedals(data) || action) && (
         <div className="-mt-3 flex flex-wrap items-center justify-between gap-3 px-6 pb-6 sm:px-8">
           {data && hasMedals(data) ? <MedalRow medals={data.medals} /> : <span />}

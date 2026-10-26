@@ -585,10 +585,12 @@ function ScoreFooter({ loading, score, position, period }: { loading: boolean; s
         {pts(score)} <span className="text-sm font-semibold text-muted">pts</span>
       </FooterStat>
       <p className="w-full text-xs leading-relaxed text-muted sm:ml-auto sm:w-auto sm:text-right">
-        <span className="font-semibold text-ink">0,5</span> por ideia · <span className="font-semibold text-ink">1</span> por voto
+        <span className="font-semibold text-ink">1</span> por ideia · votos valem mais em áreas com menos gente ·{' '}
+        <span className="font-semibold text-ink">+3</span> se selecionada
         <br className="hidden sm:block" />
         <span className="sm:hidden"> · </span>
-        <span className="font-semibold text-ink">×2</span> se a ideia for selecionada
+        área mais forte <span className="font-semibold text-ink">100%</span>, 2ª{' '}
+        <span className="font-semibold text-ink">50%</span>, demais <span className="font-semibold text-ink">25%</span>
       </p>
     </div>
   );

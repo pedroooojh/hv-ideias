@@ -4,6 +4,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Crown, Trophy } from 'lucide-react';
 import { api, qk } from '@/lib/api';
 import { formatMonth, formatNumber, formatPoints, plural } from '@/lib/format';
+import { AreaBreakdown, describeAreas } from '@/components/AreaBreakdown';
 import { PersonLink } from '@/components/PersonLink';
 import { Avatar, EmptyState, ErrorState, LoadMore, PageContainer, Skeleton, medalTilt, toneFor } from '@/components/ui';
 
@@ -30,10 +31,10 @@ export function RankingPage() {
         </span>
         <h1 className="mt-5 text-4xl font-bold tracking-[-0.02em] text-ink sm:text-5xl">Quem mais inspira a comunidade</h1>
         <p className="mt-4 text-lg text-muted">
-          Cada sugestão publicada vale <strong className="text-ink">0,5 ponto</strong> e cada voto recebido vale{' '}
-          <strong className="text-ink">1 ponto</strong>. Quando a equipe seleciona a ideia, os pontos dela{' '}
-          <strong className="text-ink">dobram</strong>. No último dia do mês, quem estiver em 1º lugar é o campeão e leva o
-          prêmio.{' '}
+          Cada sugestão publicada vale <strong className="text-ink">1 ponto</strong>. Os votos valem conforme o tamanho do
+          público da área: <strong className="text-ink">10 × votos ÷ (pessoas que votam na área + 5)</strong>, então 4 de 4
+          votos rendem mais que 20 de 50. Ideia selecionada pela equipe ganha <strong className="text-ink">+3</strong>. Os pontos contam por área: a sua área mais forte vale 100%, a 2ª
+          50% e as demais 25%. No último dia do mês, quem estiver em 1º lugar é o campeão e leva o prêmio.{' '}
           <Link to="/diretrizes" className="font-semibold text-brand hover:underline">
             Ver regras
           </Link>
@@ -56,6 +57,12 @@ export function RankingPage() {
           </>
         )}
       </section>
+      {me.data && me.data.areas.length > 0 && (
+        <div className="mt-4">
+          <p className="text-sm text-muted">Seus pontos por área</p>
+          <AreaBreakdown areas={me.data.areas} className="mt-1.5" />
+        </div>
+      )}
 
       <section className="mt-10" aria-labelledby="classificacao-titulo">
         <h2 id="classificacao-titulo" className="mb-1 text-2xl font-bold text-ink">
@@ -135,6 +142,12 @@ export function RankingPage() {
                     <td className="text-right sm:px-6 sm:py-4">
                       <span className="font-display text-lg font-bold text-navy">{formatPoints(r.score)}</span>
                       <span className="ml-1 text-xs text-muted">pts</span>
+                      {r.areas.length > 1 && (
+                        <span className="block text-[0.6875rem] text-muted" title={describeAreas(r.areas)}>
+                          em {r.areas.length} áreas
+                          <span className="sr-only">: {describeAreas(r.areas)}</span>
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -144,7 +157,7 @@ export function RankingPage() {
         )}
         <LoadMore hasMore={ranking.hasNextPage} loading={ranking.isFetchingNextPage} onClick={() => ranking.fetchNextPage()} />
         <p className="mt-6 text-xs text-muted">
-          Contam os pontos ganhos dentro do mês (horário de Brasília). Desempate: mais votos recebidos no mês e, depois, quem
+          Contam os pontos ganhos dentro do mês (horário de Brasília), com o peso de cada área. Desempate: mais votos recebidos no mês e, depois, quem
           chegou primeiro à pontuação. Contas desativadas e sugestões excluídas não entram no ranking.
         </p>
       </section>

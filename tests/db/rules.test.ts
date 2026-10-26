@@ -131,34 +131,64 @@ describe('Cenário B — filtros e ordenação', () => {
   });
 });
 
-describe('Cenário C — votação e pontuação (0,5 por sugestão, 1 por voto válido)', () => {
-  it('soma 0,5 ponto por sugestão publicada e 1 por voto; retirar um voto tira 1 ponto', async () => {
+describe('Cenário C — votação e pontuação (1 por sugestão; votos pela média ajustada ao público da área)', () => {
+  it('cada voto vale 10 ÷ (público da área + 5): com 5 pessoas votando na área, 1 ponto por voto', async () => {
     const autor = await t.createUser('Autor');
     const a = await suggest(autor, 'Sugestão A');
     const b = await suggest(autor, 'Sugestão B');
     const c = await suggest(autor, 'Sugestão C');
-    expect(await scoreOf(autor)).toEqual({ score: 1.5, votes: 0, suggestions: 3 });
-    const pool = await voters(6);
+    expect(await scoreOf(autor)).toEqual({ score: 3, votes: 0, suggestions: 3 });
+    const pool = await voters(5);
 
     for (const v of pool) await vote(v, a);
-    expect(await scoreOf(autor)).toEqual({ score: 7.5, votes: 6, suggestions: 3 });
+    expect(await scoreOf(autor)).toEqual({ score: 8, votes: 5, suggestions: 3 });
 
     const mine = await autor.rpc<Row>('list_my_suggestions');
     const points = Object.fromEntries(mine.map((s) => [s.id as string, Number(s.points)]));
-    expect(points).toEqual({ [a]: 6.5, [b]: 0.5, [c]: 0.5 });
+    expect(points).toEqual({ [a]: 6, [b]: 1, [c]: 1 });
 
     for (const v of pool.slice(0, 4)) await vote(v, c);
-    expect((await scoreOf(autor)).score).toBe(11.5);
+    expect((await scoreOf(autor)).score).toBe(12);
 
     await vote(pool[0], c, false);
-    expect((await scoreOf(autor)).score).toBe(10.5);
+    expect((await scoreOf(autor)).score).toBe(11);
+
+    // Mais 10 pessoas passam a votar na área: o público vai a 15 e cada voto passa a valer 0,5.
+    for (const v of await voters(10, 'Novato')) await vote(v, b);
+    expect(await scoreOf(autor)).toEqual({ score: 3 + 18 * 0.5, votes: 18, suggestions: 3 });
   });
 
-  it('publicar vale 0,5 ponto por sugestão, mesmo sem votos', async () => {
+  it('com pouca gente a aprovação é puxada para baixo: 4 de 4 vale mais que 2 de 2', async () => {
+    const outra = await admin.rpc<{ create_project: string }>('create_project', {
+      p_name: 'Projeto pequeno',
+      p_description: 'Projeto com pouca gente.',
+      p_category: 'Nicho',
+      p_status: 'em_desenvolvimento',
+    });
+    const [ana, bia] = [await t.createUser('Ana'), await t.createUser('Bia')];
+    const sa = await suggest(ana, 'Ideia com 4 de 4');
+    for (const v of await voters(4, 'Sql')) await vote(v, sa);
+    const [{ create_suggestion: sb }] = await bia.rpc<{ create_suggestion: string }>('create_suggestion', {
+      p_project_id: outra[0].create_project,
+      p_type: 'melhoria',
+      p_title: 'Ideia com 2 de 2',
+      p_description: 'Só duas pessoas usam este projeto.',
+    });
+    for (const v of await voters(2, 'Nicho')) await vote(v, sb);
+
+    // Ana: 1 + 10 × 4 ÷ 9 = 5,44. Bia: 1 + 10 × 2 ÷ 7 = 3,86.
+    const ranking = await ana.rpc<Row>('get_ranking');
+    expect(ranking.map((r) => [r.user_name, Number(r.score)])).toEqual([
+      ['Ana', 5.44],
+      ['Bia', 3.86],
+    ]);
+  });
+
+  it('publicar vale 1 ponto por sugestão, mesmo sem votos', async () => {
     const autor = await t.createUser('Autor');
     await suggest(autor, 'Sem votos 1');
     await suggest(autor, 'Sem votos 2');
-    expect(await scoreOf(autor)).toEqual({ score: 1, votes: 0, suggestions: 2 });
+    expect(await scoreOf(autor)).toEqual({ score: 2, votes: 0, suggestions: 2 });
   });
 
   it('ordena o ranking por pontos, depois votos e quem chegou primeiro, sem expor e-mails', async () => {
@@ -172,16 +202,17 @@ describe('Cenário C — votação e pontuação (0,5 por sugestão, 1 por voto 
     await t.raw(`update public.votes set created_at = now() - interval '2 minutes' where suggestion_id = $1`, [sa]);
 
     const ranking = await caio.rpc<Row>('get_ranking');
-    // Ana e Bia empatam em 3,5 pontos/3 votos; Ana chegou antes a essa pontuação.
+    // Público de 3 pessoas: cada voto vale 10 ÷ 8 = 1,25. Ana e Bia empatam em 4,75 pontos/3 votos;
+    // Ana chegou antes a essa pontuação.
     expect(ranking.map((r) => [Number(r.rank_position), r.user_name, Number(r.score)])).toEqual([
-      [1, 'Ana', 3.5],
-      [2, 'Bia', 3.5],
-      [3, 'Caio', 0.5],
+      [1, 'Ana', 4.75],
+      [2, 'Bia', 4.75],
+      [3, 'Caio', 1],
     ]);
     expect(ranking.find((r) => r.user_name === 'Caio')?.is_me).toBe(true);
     for (const r of ranking) {
       expect(Object.keys(r).sort()).toEqual(
-        ['is_me', 'rank_position', 'score', 'suggestion_count', 'total_count', 'user_avatar', 'user_id', 'user_name', 'votes_received'].sort(),
+        ['areas', 'is_me', 'rank_position', 'score', 'suggestion_count', 'total_count', 'user_avatar', 'user_id', 'user_name', 'votes_received'].sort(),
       );
     }
   });
@@ -208,7 +239,8 @@ describe('Cenário D — prevenção de votos duplicados', () => {
 
     const [{ n }] = await t.raw<{ n: number }>('select count(*)::int as n from public.votes where suggestion_id = $1', [id]);
     expect(n).toBe(1);
-    expect((await scoreOf(autor)).score).toBe(1.5);
+    // Público de 1 pessoa: o voto vale 10 ÷ 6.
+    expect((await scoreOf(autor)).score).toBe(2.67);
   });
 
   it('o banco rejeita duplicatas mesmo fora da API', async () => {
@@ -230,7 +262,7 @@ describe('Cenário D — prevenção de votos duplicados', () => {
       t.raw('insert into public.votes (user_id, suggestion_id) values ($1, $2)', [autor.id, id]),
     );
     expect(direct.code).toBe('HV403');
-    expect((await scoreOf(autor)).score).toBe(0.5);
+    expect((await scoreOf(autor)).score).toBe(1);
   });
 
   it('retirar o voto é idempotente e mostra se o usuário votou', async () => {
@@ -403,8 +435,8 @@ describe('Cenário F — exclusão de sugestão', () => {
   it('some das listagens públicas, deixa de pontuar e preserva o registro', async () => {
     const autor = await t.createUser('Autor');
     const id = await suggest(autor, 'Será excluída');
-    for (const v of await voters(4)) await vote(v, id);
-    expect((await scoreOf(autor)).score).toBe(4.5);
+    for (const v of await voters(5)) await vote(v, id);
+    expect((await scoreOf(autor)).score).toBe(6);
 
     await autor.rpc('delete_suggestion', { p_id: id });
 
@@ -417,7 +449,7 @@ describe('Cenário F — exclusão de sugestão', () => {
     expect(stored.deleted_at).not.toBeNull();
     expect(stored.deleted_by).toBe(autor.id);
     const [{ n }] = await t.raw<{ n: number }>('select count(*)::int as n from public.votes where suggestion_id = $1', [id]);
-    expect(n).toBe(4);
+    expect(n).toBe(5);
   });
 
   it('excluir projeto com sugestões exige confirmação explícita', async () => {
@@ -434,17 +466,21 @@ describe('Cenário F — exclusão de sugestão', () => {
 });
 
 describe('Cenário G — status', () => {
-  it('persiste a mudança, registra histórico e a seleção dobra os pontos da ideia', async () => {
+  it('persiste a mudança, registra histórico e a seleção dá 3 pontos de bônus', async () => {
     const autor = await t.createUser('Autor');
     const id = await suggest(autor, 'Muda de status');
-    const [v1, v2, v3] = await voters(3);
+    const pool = await voters(5);
+    // Cinco pessoas já votam na área: cada voto vale 1 ponto.
+    const plateia = await suggest(await t.createUser('Plateia'), 'Ideia que todos apoiam');
+    for (const v of pool) await vote(v, plateia);
+    const [v1, v2, v3] = pool;
     await vote(v1, id);
     await vote(v2, id);
-    expect((await scoreOf(autor)).score).toBe(2.5);
+    expect((await scoreOf(autor)).score).toBe(3);
 
-    // Selecionada: recebe de novo os 2,5 pontos e cada voto seguinte vale 2.
+    // Selecionada: +3 pontos, e os votos seguintes continuam valendo 1.
     await admin.rpc('set_suggestion_status', { p_id: id, p_status: 'planejado' });
-    expect((await scoreOf(autor)).score).toBe(5);
+    expect((await scoreOf(autor)).score).toBe(6);
     await vote(v3, id);
     expect((await scoreOf(autor)).score).toBe(7);
     for (const status of ['em_desenvolvimento', 'implementado']) {
@@ -456,8 +492,8 @@ describe('Cenário G — status', () => {
 
     const [detail] = await autor.rpc<Row>('get_suggestion', { p_id: id });
     expect(detail).toMatchObject({ status: 'implementado', voting_open: false });
-    const [listed] = await autor.rpc<Row>('list_suggestions', { p_project_id: projectId });
-    expect(listed.status).toBe('implementado');
+    const listed = (await autor.rpc<Row>('list_suggestions', { p_project_id: projectId })).find((x) => x.id === id);
+    expect(listed?.status).toBe('implementado');
 
     const history = await autor.rpc<Row>('list_status_history', { p_suggestion_id: id });
     expect(history.map((h) => [h.previous_status, h.new_status, h.actor_name])).toEqual([
@@ -466,9 +502,11 @@ describe('Cenário G — status', () => {
       ['em_analise', 'planejado', 'Admin Hubvision'],
     ]);
 
-    // Fora da seleção, o dobro sai.
+    // Não aprovado: sai o bônus e o ponto da publicação; os votos continuam.
     await admin.rpc('set_suggestion_status', { p_id: id, p_status: 'nao_aprovado', p_reason: 'Revisão do roadmap.' });
-    expect((await scoreOf(autor)).score).toBe(3.5);
+    expect(await scoreOf(autor)).toEqual({ score: 3, votes: 3, suggestions: 0 });
+    const [rejected] = await autor.rpc<Row>('list_my_suggestions');
+    expect(Number(rejected.points)).toBe(3);
     const [{ selected_at }] = await t.raw<Row>('select selected_at from public.suggestions where id = $1', [id]);
     expect(selected_at).toBeNull();
   });
@@ -504,7 +542,7 @@ describe('Cenário H — comentários', () => {
     const counts = Object.fromEntries(list.map((s) => [s.id as string, Number(s.comment_count)]));
     expect(counts).toEqual({ [id]: 2, [outra]: 0 });
     // Só as duas publicações contam; comentar não gera pontos.
-    expect((await scoreOf(autor)).score).toBe(1);
+    expect((await scoreOf(autor)).score).toBe(2);
     expect((await scoreOf(leitor)).score).toBe(0);
   });
 
@@ -557,7 +595,7 @@ describe('Cenário I — registros ausentes e projetos arquivados', () => {
     });
     expect((await errorOf(suggest(autor, 'Depois do arquivamento'))).code).toBe('HV409');
     expect((await errorOf(vote(outro, id))).code).toBe('HV409');
-    expect((await scoreOf(autor)).score).toBe(1.5);
+    expect((await scoreOf(autor)).score).toBe(2.67);
   });
 });
 
@@ -679,9 +717,9 @@ describe('Ranking semanal (fechamento às sextas)', () => {
     const sa = await suggest(ana, 'Ideia da Ana');
     const sb = await suggest(bia, 'Ideia da Bia');
     await suggest(caio, 'Ideia do Caio');
-    const pool = await voters(4);
+    const pool = await voters(5);
     for (const v of pool) await vote(v, sa);
-    for (const v of pool.slice(0, 2)) await vote(v, sb);
+    for (const v of pool.slice(0, 3)) await vote(v, sb);
     // Três votos da Ana foram dados na semana passada: não contam na semana atual.
     await t.raw(
       `update public.votes set created_at = (select week_start from private.ranking_week(1)) + interval '1 day'
@@ -690,19 +728,20 @@ describe('Ranking semanal (fechamento às sextas)', () => {
     );
 
     const current = await weekly(caio);
-    // As três publicações são desta semana (0,5 cada).
+    // As três publicações são desta semana (1 cada); 5 pessoas votam na área (1 ponto por voto).
     expect(current.entries.map((r) => [r.rank_position, r.user_name, Number(r.score)])).toEqual([
-      [1, 'Bia', 2.5],
-      [2, 'Ana', 1.5],
-      [3, 'Caio', 0.5],
+      [1, 'Bia', 4],
+      [2, 'Ana', 3],
+      [3, 'Caio', 1],
     ]);
     expect(current.total_count).toBe(3);
-    expect(current.me).toEqual({ rank_position: 3, score: 0.5, votes_received: 0 });
+    expect(current.me).toEqual({ rank_position: 3, score: 1, votes_received: 0 });
     expect(new Date(current.week_end).getTime() - new Date(current.week_start).getTime()).toBe(7 * 86_400_000);
 
     const last = await weekly(ana, 1);
     expect(last.is_closing_day).toBe(false);
-    expect(last.entries.map((r) => [r.user_name, Number(r.score), r.is_me])).toEqual([['Ana', 3, true]]);
+    // Até a semana passada só 3 pessoas votavam na área: cada voto valia 10 ÷ 8.
+    expect(last.entries.map((r) => [r.user_name, Number(r.score), r.is_me])).toEqual([['Ana', 3.75, true]]);
     expect(last.me.rank_position).toBe(1);
     expect(new Date(last.week_end).getTime()).toBe(new Date(current.week_start).getTime());
   });
@@ -762,15 +801,16 @@ describe('Ranking mensal e campeão do mês', () => {
     await toLastMonth(sa);
 
     const current = await monthly(bia);
-    expect(current.entries.map((r) => [r.rank_position, r.user_name, Number(r.score)])).toEqual([[1, 'Bia', 1.5]]);
+    // Público de 3 pessoas nos últimos 90 dias: cada voto vale 1,25.
+    expect(current.entries.map((r) => [r.rank_position, r.user_name, Number(r.score)])).toEqual([[1, 'Bia', 2.25]]);
     expect(current.champion).toBeNull();
-    expect(current.me).toEqual({ rank_position: 1, score: 1.5, votes_received: 1 });
-    expect((await bia.rpc<Row>('get_ranking')).map((r) => [r.user_name, Number(r.score)])).toEqual([['Bia', 1.5]]);
+    expect(current.me).toEqual({ rank_position: 1, score: 2.25, votes_received: 1 });
+    expect((await bia.rpc<Row>('get_ranking')).map((r) => [r.user_name, Number(r.score)])).toEqual([['Bia', 2.25]]);
 
     // Antes de gravar, o mês passado mostra o campeão calculado — e nunca a lista.
     const before = await monthly(bia, 1);
     expect(before).toMatchObject({ is_final: false, entries: [] });
-    expect(before.champion).toMatchObject({ user_name: 'Ana', score: 3.5, votes_received: 3, is_me: false });
+    expect(before.champion).toMatchObject({ user_name: 'Ana', score: 4.75, votes_received: 3, is_me: false });
     expect(new Date(before.month_end).getTime()).toBe(new Date(current.month_start).getTime());
 
     expect((await errorOf(t.raw(`select private.close_ranking_month(0)`))).code).toBe('HV422');
@@ -783,17 +823,17 @@ describe('Ranking mensal e campeão do mês', () => {
     await ana.rpc('delete_suggestion', { p_id: sa });
     const closed = await monthly(ana, 1);
     expect(closed.is_final).toBe(true);
-    expect(closed.champion).toMatchObject({ user_name: 'Ana', score: 3.5, is_me: true });
+    expect(closed.champion).toMatchObject({ user_name: 'Ana', score: 4.75, is_me: true });
 
     const champions = await bia.rpc<Row>('list_monthly_champions');
-    expect(champions.map((c) => [c.user_name, Number(c.score), c.is_me])).toEqual([['Ana', 3.5, false]]);
+    expect(champions.map((c) => [c.user_name, Number(c.score), c.is_me])).toEqual([['Ana', 4.75, false]]);
     const notice = (await ana.rpc<Row>('list_my_notifications')).find((x) => x.kind === 'champion');
-    expect(notice?.data).toMatchObject({ score: 3.5 });
+    expect(notice?.data).toMatchObject({ score: 4.75 });
     const [{ medals }] = await t.raw<{ medals: Row }>(`select private.user_medals($1) as medals`, [ana.id]);
     expect(medals).toMatchObject({ champion: 1 });
   });
 
-  it('o dobro da seleção entra no mês (e na semana) em que a ideia foi selecionada', async () => {
+  it('o bônus da seleção entra no mês (e na semana) em que a ideia foi selecionada', async () => {
     const ana = await t.createUser('Ana');
     const id = await suggest(ana, 'Selecionada depois');
     const [v1, v2, v3] = await voters(3);
@@ -802,12 +842,14 @@ describe('Ranking mensal e campeão do mês', () => {
     await toLastMonth(id);
 
     await admin.rpc('set_suggestion_status', { p_id: id, p_status: 'planejado' });
-    expect(Number((await monthly(ana, 1)).champion?.score)).toBe(2.5);
-    expect((await monthly(ana)).me.score).toBe(2.5);
+    // Mês passado: 1 + 2 votos com público de 2 (10 × 2 ÷ 7).
+    expect(Number((await monthly(ana, 1)).champion?.score)).toBe(3.86);
+    expect((await monthly(ana)).me.score).toBe(3);
+    // O 3º voto chega com público de 3 pessoas: 10 ÷ 8.
     await vote(v3, id);
-    expect((await monthly(ana)).me.score).toBe(4.5);
+    expect((await monthly(ana)).me.score).toBe(4.25);
     const [{ get_weekly_ranking: w }] = await ana.rpc<{ get_weekly_ranking: { me: Row } }>('get_weekly_ranking');
-    expect(Number(w.me.score)).toBe(4.5);
+    expect(Number(w.me.score)).toBe(4.25);
   });
 
   it('o mês vai do dia 1º à meia-noite de Brasília até o último dia', async () => {
@@ -844,8 +886,8 @@ describe('Ranking mensal e campeão do mês', () => {
     const runnersUp = async (actor: Actor) =>
       (await actor.rpc<Row>('get_monthly_runners_up', { p_months_ago: 1 })).map((r) => [Number(r.rank_position), r.user_name, Number(r.score), r.is_me]);
     expect(await runnersUp(bia)).toEqual([
-      [2, 'Bia', 2.5, true],
-      [3, 'Caio', 1.5, false],
+      [2, 'Bia', 3.5, true],
+      [3, 'Caio', 2.25, false],
     ]);
 
     // Depois do fechamento, o campeão gravado continua fora da lista mesmo que a pontuação mude.
@@ -972,8 +1014,8 @@ describe('Fechamento semanal gravado', () => {
     const closed = await lastWeek(bia);
     expect(closed.is_final).toBe(true);
     expect(closed.entries.map((r) => [r.rank_position, r.user_name, Number(r.score)])).toEqual([
-      [1, 'Ana', 3],
-      [2, 'Bia', 1],
+      [1, 'Ana', 3.75],
+      [2, 'Bia', 1.25],
     ]);
     expect(closed.me.rank_position).toBe(2);
 
@@ -1076,10 +1118,10 @@ describe('Perfil público', () => {
       name: 'Ana',
       is_me: false,
       monthly_rank_position: 1,
-      monthly_score: same_month ? 3 : 2,
+      monthly_score: same_month ? 5.33 : 3.67,
       votes_received: 2,
       weekly_rank_position: 1,
-      weekly_score: 2,
+      weekly_score: 3.67,
       suggestion_count: 2,
       medals: { gold: 1, silver: 0, bronze: 0, champion: 0 },
     });
@@ -1297,5 +1339,165 @@ describe('Exclusão de contas pela Gestão', () => {
 
   it('administrador não exclui a própria conta pela Gestão', async () => {
     expect((await errorOf(admin.rpc('admin_delete_user', { p_user_id: admin.id }))).code).toBe('HV409');
+  });
+});
+
+describe('Peso por área', () => {
+  async function newProject(name: string, category: string, status = 'em_desenvolvimento'): Promise<string> {
+    const [row] = await admin.rpc<{ create_project: string }>('create_project', {
+      p_name: name,
+      p_description: `Descrição do projeto ${name}.`,
+      p_category: category,
+      p_status: status,
+    });
+    return row.create_project;
+  }
+
+  async function suggestIn(author: Actor, project: string, title: string): Promise<string> {
+    const [row] = await author.rpc<{ create_suggestion: string }>('create_suggestion', {
+      p_project_id: project,
+      p_type: 'melhoria',
+      p_title: title,
+      p_description: `Descrição detalhada de ${title}.`,
+    });
+    return row.create_suggestion;
+  }
+
+  const areasOf = (areas: unknown) =>
+    (areas as Row[]).map((a) => [String(a.area).toLowerCase(), Number(a.points), Number(a.weight), Number(a.score)]);
+
+  it('a área mais forte vale 100%, a 2ª 50% e as demais 25%; maiúsculas não separam áreas', async () => {
+    const integracoes = await newProject('Conector ERP', 'Integrações');
+    const app = await newProject('App de campo', 'Aplicativo');
+    const appOffline = await newProject('Modo offline', 'aplicativo ');
+    const [eva, diego] = [await t.createUser('Eva'), await t.createUser('Diego')];
+    const pool = await voters(5);
+
+    // Eva: SQL 6 (1 + 5 votos com público de 5), Integrações 4,75 (1 + 3 votos com público de 3),
+    // Aplicativo 3,67 (dois projetos da mesma área: 1 + 1 voto com público de 1, e 1).
+    const e1 = await suggest(eva, 'Ideia de SQL da Eva');
+    for (const v of pool) await vote(v, e1);
+    const e2 = await suggestIn(eva, integracoes, 'Ideia de integração');
+    for (const v of pool.slice(0, 3)) await vote(v, e2);
+    await vote(pool[0], await suggestIn(eva, app, 'Ideia do aplicativo'));
+    await suggestIn(eva, appOffline, 'Ideia do modo offline');
+
+    // Diego: só SQL, 11 pontos (1 + 5 e 1 + 4).
+    const d1 = await suggest(diego, 'Ideia de SQL do Diego');
+    for (const v of pool) await vote(v, d1);
+    const d2 = await suggest(diego, 'Outra ideia do Diego');
+    for (const v of pool.slice(0, 4)) await vote(v, d2);
+
+    // Soma simples: Eva 14,42 × Diego 11. Com peso: Eva 6 + 2,375 + 0,92 = 9,29.
+    const ranking = await eva.rpc<Row>('get_ranking');
+    expect(ranking.map((r) => [r.user_name, Number(r.score), Number(r.suggestion_count), Number(r.votes_received)])).toEqual([
+      ['Diego', 11, 2, 9],
+      ['Eva', 9.29, 4, 9],
+    ]);
+    const evaRow = ranking.find((r) => r.user_name === 'Eva');
+    expect(areasOf(evaRow?.areas)).toEqual([
+      ['sql & relatórios', 6, 1, 6],
+      ['integrações', 4.75, 0.5, 2.38],
+      ['aplicativo', 3.67, 0.25, 0.92],
+    ]);
+    expect(areasOf(ranking.find((r) => r.user_name === 'Diego')?.areas)).toEqual([['sql & relatórios', 11, 1, 11]]);
+
+    const [mine] = await eva.rpc<Row>('get_my_score');
+    expect(Number(mine.score)).toBe(9.29);
+    expect(areasOf(mine.areas)).toEqual(areasOf(evaRow?.areas));
+
+    const [{ get_public_profile: p }] = await diego.rpc<{ get_public_profile: Row }>('get_public_profile', { p_user_id: eva.id });
+    expect(Number(p.monthly_score)).toBe(9.29);
+    expect(areasOf(p.monthly_areas)).toEqual(areasOf(evaRow?.areas));
+
+    // O fechamento grava a pontuação com centésimos.
+    await t.raw(`update public.suggestions set created_at = (select month_start from private.ranking_month(1)) + interval '2 days'`);
+    await t.raw(`update public.votes set created_at = (select month_start from private.ranking_month(1)) + interval '3 days'`);
+    await t.raw(`select private.close_ranking_month(1)`);
+    const [{ score: championScore }] = await t.raw<{ score: string }>(`select score::text from public.monthly_results`);
+    expect(championScore).toBe('11.00');
+    const runnersUp = await eva.rpc<Row>('get_monthly_runners_up', { p_months_ago: 1 });
+    expect(runnersUp.map((r) => [r.user_name, Number(r.score)])).toEqual([['Eva', 9.29]]);
+  });
+
+  it('sem pontos no mês, a composição vem vazia', async () => {
+    const ana = await t.createUser('Ana');
+    const [mine] = await ana.rpc<Row>('get_my_score');
+    expect(mine).toMatchObject({ rank_position: null, areas: [] });
+  });
+});
+
+describe('Mover sugestão de projeto', () => {
+  async function newProject(name: string, category: string, status = 'em_desenvolvimento'): Promise<string> {
+    const [row] = await admin.rpc<{ create_project: string }>('create_project', {
+      p_name: name,
+      p_description: `Descrição do projeto ${name}.`,
+      p_category: category,
+      p_status: status,
+    });
+    return row.create_project;
+  }
+
+  it('só a administração move; os pontos passam para a área nova, com auditoria e aviso ao autor', async () => {
+    const outro = await newProject('Conector ERP', 'Integrações');
+    const eva = await t.createUser('Eva');
+    const pool = await voters(5);
+    const fica = await suggest(eva, 'Ideia que fica');
+    for (const v of pool) await vote(v, fica);
+    const [{ create_suggestion: vai }] = await eva.rpc<{ create_suggestion: string }>('create_suggestion', {
+      p_project_id: outro,
+      p_type: 'melhoria',
+      p_title: 'Ideia no projeto errado',
+      p_description: 'Na verdade é sobre os relatórios SQL.',
+    });
+    await vote(pool[0], vai);
+    await vote(pool[1], vai);
+    // SQL 6 + Integrações (1 + 2 votos com público de 2 = 3,86) × 50%.
+    expect((await scoreOf(eva)).score).toBe(7.93);
+
+    expect((await errorOf(eva.rpc('move_suggestion', { p_id: vai, p_project_id: projectId }))).code).toBe('HV403');
+
+    await admin.rpc('move_suggestion', { p_id: vai, p_project_id: projectId });
+    // Tudo numa área só, com público de 5: 6 + 3.
+    expect((await scoreOf(eva)).score).toBe(9);
+    const listed = await eva.rpc<Row>('list_suggestions', { p_project_id: projectId });
+    expect(listed.map((s) => s.id).sort()).toEqual([fica, vai].sort());
+    const [detail] = await eva.rpc<Row>('get_suggestion', { p_id: vai });
+    expect(detail.project_id).toBe(projectId);
+
+    const [entry] = await t.raw<Row>(
+      `select actor_id, previous_value->>'project' as from_project, new_value->>'project' as to_project
+       from public.audit_log where entity_id = $1 and action = 'suggestion.move'`,
+      [vai],
+    );
+    expect(entry).toEqual({ actor_id: admin.id, from_project: 'Conector ERP', to_project: 'Templates de consultas SQL' });
+
+    const notice = (await eva.rpc<Row>('list_my_notifications')).find((n) => n.kind === 'moved');
+    expect(notice).toMatchObject({
+      suggestion_id: vai,
+      data: { previous_project: 'Conector ERP', new_project: 'Templates de consultas SQL' },
+    });
+
+    // Mover para o mesmo projeto não faz nada (nem auditoria nem aviso).
+    await admin.rpc('move_suggestion', { p_id: vai, p_project_id: projectId });
+    const [{ n }] = await t.raw<{ n: number }>(
+      `select count(*)::int as n from public.audit_log where entity_id = $1 and action = 'suggestion.move'`,
+      [vai],
+    );
+    expect(n).toBe(1);
+  });
+
+  it('recusa projeto arquivado, inexistente ou sugestão excluída', async () => {
+    const arquivado = await newProject('Projeto antigo', 'Legado', 'arquivado');
+    const ana = await t.createUser('Ana');
+    const id = await suggest(ana, 'Ideia para mover');
+    expect((await errorOf(admin.rpc('move_suggestion', { p_id: id, p_project_id: arquivado }))).code).toBe('HV409');
+    expect(
+      (await errorOf(admin.rpc('move_suggestion', { p_id: id, p_project_id: '00000000-0000-0000-0000-000000000000' }))).code,
+    ).toBe('HV404');
+    await ana.rpc('delete_suggestion', { p_id: id });
+    const destino = await newProject('Destino', 'Integrações');
+    expect((await errorOf(admin.rpc('move_suggestion', { p_id: id, p_project_id: destino }))).code).toBe('HV404');
+    expect((await errorOf(t.anon.rpc('move_suggestion', { p_id: id, p_project_id: destino }))).code).toBe('42501');
   });
 });

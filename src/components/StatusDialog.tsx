@@ -49,7 +49,7 @@ export function StatusDialog({ open, onOpenChange, suggestionId, projectId, curr
         qk.mySuggestions,
         qk.adminSuggestions,
         qk.userSuggestionLists,
-        // A seleção (ou a saída dela) muda os pontos do autor.
+        // A seleção (ou a saída dela) e a não aprovação mudam os pontos do autor.
         qk.ranking,
         qk.myScore,
         qk.publicProfiles,
@@ -88,7 +88,7 @@ export function StatusDialog({ open, onOpenChange, suggestionId, projectId, curr
       busy={mutation.isPending}
       dirty={dirty}
       title="Alterar status"
-      description="A mudança fica registrada no histórico da sugestão e na auditoria. Planejado, Em desenvolvimento e Implementado contam como ideia selecionada: os pontos do autor dobram."
+      description="A mudança fica registrada no histórico da sugestão e na auditoria. Planejado, Em desenvolvimento e Implementado contam como ideia selecionada: o autor ganha 3 pontos. Não aprovado tira o ponto da publicação."
     >
       <form onSubmit={submit} noValidate className="space-y-5">
         {serverError && <FormError message={serverError} />}
